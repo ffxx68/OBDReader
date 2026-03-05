@@ -3,15 +3,15 @@ plugins {
 }
 
 android {
-    compileSdk 34
-    namespace 'com.example.obdreader'
+    compileSdk 36
+    namespace 'com.ffxx68.obdreader'
 
     defaultConfig {
-        applicationId "com.example.obdreader"
+        applicationId "com.ffxx68.obdreader"
         minSdk 23          // Android 6.0 — supporto BT classico e permessi runtime
-        targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        targetSdk 36
+        versionCode 7
+        versionName "1.1"
     }
 
     buildTypes {
@@ -21,8 +21,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
 }
 

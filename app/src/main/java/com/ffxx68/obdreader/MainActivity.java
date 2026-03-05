@@ -1,4 +1,4 @@
-package com.example.obdreader;
+package com.ffxx68.obdreader;
 
 import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
@@ -50,12 +50,17 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvTemp;
     private TextView tvDtc;
     private TextView tvProtocol;
+    private TextView tvElmVersion;
+    private TextView tvVin;
     private Button btnScan;
     private Button btnDisconnect;
     private Button btnReadOnce;
     private Button btnStartPolling;
     private Button btnClearDtc;
     private ProgressBar progressBar;
+    private TextView tvLog;
+    private ScrollView scrollLog;
+    private RadioGroup rgProtocol;
 
     // Lista dispositivi accoppiati
     private final List<BluetoothDevice> pairedDevices = new ArrayList<>();
@@ -79,12 +84,17 @@ public class MainActivity extends AppCompatActivity {
         tvTemp      = findViewById(R.id.tvTemp);
         tvDtc       = findViewById(R.id.tvDtc);
         tvProtocol  = findViewById(R.id.tvProtocol);
+        tvElmVersion = findViewById(R.id.tvElmVersion);
+        tvVin        = findViewById(R.id.tvVin);
         btnScan         = findViewById(R.id.btnScan);
         btnDisconnect   = findViewById(R.id.btnDisconnect);
         btnReadOnce     = findViewById(R.id.btnReadOnce);
         btnStartPolling = findViewById(R.id.btnStartPolling);
         btnClearDtc     = findViewById(R.id.btnClearDtc);
         progressBar     = findViewById(R.id.progressBar);
+        tvLog           = findViewById(R.id.tvLog);
+        scrollLog       = findViewById(R.id.scrollLog);
+        rgProtocol      = findViewById(R.id.rgProtocol);
 
         setDataButtonsEnabled(false);
         btnDisconnect.setEnabled(false);
@@ -93,14 +103,14 @@ public class MainActivity extends AppCompatActivity {
     private void initBluetooth() {
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (bluetoothAdapter == null) {
-            showStatus("❌ Bluetooth non supportato su questo dispositivo");
+            showStatus("Bluetooth non supportato su questo dispositivo");
             btnScan.setEnabled(false);
             return;
         }
         if (!bluetoothAdapter.isEnabled()) {
-            showStatus("⚠️ Attiva il Bluetooth nelle impostazioni, poi riavvia l'app");
+            showStatus("Attiva il Bluetooth nelle impostazioni, poi riavvia l'app");
         } else {
-            showStatus("✅ Bluetooth attivo. Tocca 'Cerca dispositivi' per iniziare.");
+            showStatus("Bluetooth attivo. Tocca 'Cerca dispositivi' per iniziare.");
         }
     }
 
@@ -156,7 +166,7 @@ public class MainActivity extends AppCompatActivity {
             if (allGranted) {
                 scanAndShowDevices();
             } else {
-                showStatus("❌ Permessi Bluetooth negati. L'app non può funzionare.");
+                showStatus("Permessi Bluetooth negati. L'app non puo funzionare.");
             }
         }
     }
@@ -175,8 +185,8 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (pairedDevices.isEmpty()) {
-            showStatus("⚠️ Nessun dispositivo accoppiato.\n"
-                    + "Vai in Impostazioni → Bluetooth e accoppia l'ELM327 (PIN: 1234 o 6789)");
+            showStatus("Nessun dispositivo accoppiato.\n"
+                    + "Vai in Impostazioni -> Bluetooth e accoppia l'ELM327 (PIN: 1234 o 6789)");
             return;
         }
 
@@ -192,7 +202,7 @@ public class MainActivity extends AppCompatActivity {
     // ─── CONNESSIONE BLUETOOTH ───────────────────────────────────────────────
 
     private void connectToDevice(BluetoothDevice device) {
-        showStatus("🔄 Connessione a " + device.getName() + "...");
+        showStatus("Connessione a " + device.getName() + "...");
         showProgress(true);
         btnScan.setEnabled(false);
 
@@ -213,7 +223,7 @@ public class MainActivity extends AppCompatActivity {
 
                 isConnected = true;
                 mainHandler.post(() -> {
-                    showStatus("✅ Connesso a: " + device.getName());
+                    showStatus("Connesso a: " + device.getName());
                     showProgress(false);
                     btnScan.setEnabled(true);
                     btnDisconnect.setEnabled(true);
@@ -223,7 +233,7 @@ public class MainActivity extends AppCompatActivity {
             } catch (IOException e) {
                 isConnected = false;
                 mainHandler.post(() -> {
-                    showStatus("❌ Errore connessione: " + e.getMessage()
+                    showStatus("Errore connessione: " + e.getMessage()
                             + "\nAssicurati che l'ELM327 sia acceso e nel raggio BT.");
                     showProgress(false);
                     btnScan.setEnabled(true);
@@ -240,14 +250,72 @@ public class MainActivity extends AppCompatActivity {
      * e non fanno parte del protocollo OBD-II standard.
      */
     private void initElm327() throws IOException {
-        sendCommand("ATZ", 1500);    // Soft reset — risposta: "ELM327 v1.x"
-        sendCommand("ATE0", 500);    // Echo OFF — evita echo dei comandi nella risposta
-        sendCommand("ATL0", 300);    // Linefeeds OFF — risposta più pulita
-        sendCommand("ATS0", 300);    // Spaces OFF — rimuove spazi tra byte hex
-        sendCommand("ATH0", 300);    // Headers OFF — nasconde header CAN/ISO
-        sendCommand("ATAT1", 300);   // Adaptive timing ON — ottimizza timeout automaticamente
-        String proto = sendCommand("ATSP0", 1000); // Auto-detect protocollo (ISO, CAN, KWP...)
-        mainHandler.post(() -> tvProtocol.setText("Protocollo: " + proto.trim()));
+        String elmVersion = sendCommand("ATZ", 1500);  // Soft reset — risposta: "ELM327 v1.x"
+        sendCommand("ATE0", 500);    // Echo OFF
+        sendCommand("ATL0", 300);    // Linefeeds OFF
+        sendCommand("ATS0", 300);    // Spaces OFF
+        sendCommand("ATH0", 300);    // Headers OFF
+        sendCommand("ATAT1", 300);   // Adaptive timing ON
+
+        // Determina protocollo in base alla selezione UI
+        int selectedId = rgProtocol.getCheckedRadioButtonId();
+        String protoCmd;
+        String protoLabel;
+
+        if (selectedId == R.id.rbSP3) {
+            protoCmd   = "ATSP3";
+            protoLabel = "ISO 9141-2 (SP3)";
+        } else if (selectedId == R.id.rbSP5) {
+            protoCmd   = "ATSP5";
+            protoLabel = "KWP Fast Init (SP5)";
+        } else {
+            protoCmd   = "ATSP0";
+            protoLabel = "Auto-detect (SP0)";
+        }
+
+        sendCommand(protoCmd, 1000);
+
+        // Leggi VIN (Mode 09 PID 02) — non sempre supportato da tutti i veicoli
+        String rawVin = sendCommand("0902", 1500);
+        String vin = parseVin(rawVin);
+
+        final String label   = protoLabel;
+        final String elmVer  = elmVersion.isEmpty() ? "?" : elmVersion;
+        final String vinText = vin;
+        mainHandler.post(() -> {
+            tvProtocol.setText("Protocollo: " + label);
+            tvElmVersion.setText("ELM327: " + elmVer);
+            tvVin.setText("VIN: " + vinText);
+        });
+    }
+
+    /**
+     * Estrae il VIN ASCII dalla risposta grezza di 0902.
+     * Formato risposta ELM327 (headers off, spaces off):
+     *   490201 + 11 byte hex ASCII del VIN
+     * Alcuni veicoli rispondono su più righe: "4902 01 XX XX XX..."
+     */
+    private String parseVin(String raw) {
+        if (raw == null || raw.isEmpty() || raw.contains("NO DATA")
+                || raw.contains("ERROR") || raw.contains("?")) {
+            return "N/D";
+        }
+        // Rimuove spazi e cerca il marker "490201" o "49 02 01"
+        String hex = raw.replaceAll("\\s+", "").toUpperCase();
+        int idx = hex.indexOf("490201");
+        if (idx < 0) idx = hex.indexOf("4902");
+        if (idx < 0) return "N/D";
+        // Salta i byte header (490201 = 6 char)
+        String vinHex = hex.substring(idx + 6);
+        // Converti i byte hex in caratteri ASCII
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i + 1 < vinHex.length() && sb.length() < 17; i += 2) {
+            try {
+                int b = Integer.parseInt(vinHex.substring(i, i + 2), 16);
+                if (b >= 0x20 && b <= 0x7E) sb.append((char) b);
+            } catch (NumberFormatException ignored) {}
+        }
+        return sb.length() > 0 ? sb.toString() : "N/D";
     }
 
     // ─── COMANDI OBD-II ──────────────────────────────────────────────────────
@@ -275,7 +343,15 @@ public class MainActivity extends AppCompatActivity {
                 try { Thread.sleep(10); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); };
             }
         }
-        return response.toString().replace("\r", "").replace("\n", " ").trim();
+        String result = response.toString().replace("\r", "").replace("\n", " ").trim();
+
+        final String logLine = ">> " + command + "\n<< " + result + "\n";
+        mainHandler.post(() -> {
+            tvLog.append(logLine);
+            scrollLog.post(() -> scrollLog.fullScroll(ScrollView.FOCUS_DOWN));
+        });
+
+        return result;
     }
 
     // Overload senza sleep custom
@@ -298,7 +374,7 @@ public class MainActivity extends AppCompatActivity {
                 });
             } catch (IOException e) {
                 mainHandler.post(() -> {
-                    showStatus("❌ Errore lettura: " + e.getMessage());
+                    showStatus("Errore lettura: " + e.getMessage());
                     showProgress(false);
                 });
             }
@@ -315,7 +391,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void startPolling() {
         isPolling = true;
-        btnStartPolling.setText("⏹ Stop aggiornamento continuo");
+        btnStartPolling.setText("Stop aggiornamento continuo");
         btnReadOnce.setEnabled(false);
 
         pollingRunnable = new Runnable() {
@@ -327,7 +403,7 @@ public class MainActivity extends AppCompatActivity {
                         OBDData data = fetchOBDData();
                         mainHandler.post(() -> updateUI(data));
                     } catch (IOException e) {
-                        mainHandler.post(() -> showStatus("⚠️ Errore polling: " + e.getMessage()));
+                        mainHandler.post(() -> showStatus("Errore polling: " + e.getMessage()));
                     }
                     if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
                 }).start();
@@ -339,7 +415,7 @@ public class MainActivity extends AppCompatActivity {
     private void stopPolling() {
         isPolling = false;
         if (pollingRunnable != null) mainHandler.removeCallbacks(pollingRunnable);
-        btnStartPolling.setText("🔁 Avvia aggiornamento continuo");
+        btnStartPolling.setText("Avvia aggiornamento continuo");
         btnReadOnce.setEnabled(true);
     }
 
@@ -425,7 +501,7 @@ public class MainActivity extends AppCompatActivity {
                 || raw.contains("NO DATA")
                 || raw.contains("NODATA")
                 || raw.contains("OK")) {
-            return "Nessun codice errore ✅";
+            return "Nessun codice errore";
         }
 
         String clean = raw.replaceAll("\\s+", "").toUpperCase();
@@ -446,7 +522,7 @@ public class MainActivity extends AppCompatActivity {
             } catch (NumberFormatException ignored) {}
         }
 
-        return codes.isEmpty() ? "Nessun codice errore ✅" : String.join(", ", codes);
+        return codes.isEmpty() ? "Nessun codice errore" : String.join(", ", codes);
     }
 
     // ─── CANCELLAZIONE DTC ───────────────────────────────────────────────────
@@ -463,13 +539,13 @@ public class MainActivity extends AppCompatActivity {
                             // Mode 04: Clear DTC — non ha PID, risposta: "44"
                             String resp = sendCommand("04", 1000);
                             mainHandler.post(() -> {
-                                tvDtc.setText("DTC: Cancellati ✅");
-                                showStatus("✅ Codici errore cancellati");
+                                tvDtc.setText("DTC: Cancellati");
+                                showStatus("Codici errore cancellati");
                                 showProgress(false);
                             });
                         } catch (IOException e) {
                             mainHandler.post(() -> {
-                                showStatus("❌ Errore cancellazione: " + e.getMessage());
+                                showStatus("Errore cancellazione: " + e.getMessage());
                                 showProgress(false);
                             });
                         }
@@ -483,18 +559,18 @@ public class MainActivity extends AppCompatActivity {
 
     private void updateUI(OBDData data) {
         tvRpm.setText(data.rpm >= 0
-                ? "⚙️  RPM: " + data.rpm + " giri/min"
-                : "⚙️  RPM: N/D");
+                ? "RPM: " + data.rpm + " giri/min"
+                : "RPM: N/D");
 
         tvSpeed.setText(data.speedKmh >= 0
-                ? "🚗  Velocità: " + data.speedKmh + " km/h"
-                : "🚗  Velocità: N/D");
+                ? "Velocita: " + data.speedKmh + " km/h"
+                : "Velocita: N/D");
 
         tvTemp.setText(data.tempCelsius > -40
-                ? "🌡️  Temperatura: " + data.tempCelsius + " °C"
-                : "🌡️  Temperatura: N/D");
+                ? "Temperatura: " + data.tempCelsius + " C"
+                : "Temperatura: N/D");
 
-        tvDtc.setText("⚠️  DTC: " + data.dtcCodes);
+        tvDtc.setText("DTC: " + data.dtcCodes);
     }
 
     private void showStatus(String msg) {
@@ -518,14 +594,16 @@ public class MainActivity extends AppCompatActivity {
         isConnected = false;
         closeStreams();
 
-        showStatus("🔌 Disconnesso.");
+        showStatus("Disconnesso.");
         btnDisconnect.setEnabled(false);
         setDataButtonsEnabled(false);
-        tvRpm.setText("⚙️  RPM: --");
-        tvSpeed.setText("🚗  Velocità: --");
-        tvTemp.setText("🌡️  Temperatura: --");
-        tvDtc.setText("⚠️  DTC: --");
+        tvRpm.setText("RPM: --");
+        tvSpeed.setText("Velocita: --");
+        tvTemp.setText("Temperatura: --");
+        tvDtc.setText("DTC: --");
         tvProtocol.setText("Protocollo: --");
+        tvElmVersion.setText("ELM327: --");
+        tvVin.setText("VIN: --");
     }
 
     private void closeStreams() {

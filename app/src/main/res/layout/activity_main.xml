@@ -1,184 +1,261 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="#1C1C2E">
+    android:layout_height="match_parent">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="12dp">
 
-        <!-- TITOLO -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="🔧 OBD-II Reader"
-            android:textColor="#E0E0FF"
-            android:textSize="26sp"
-            android:textStyle="bold"
             android:gravity="center"
-            android:paddingBottom="4dp"/>
+            android:paddingBottom="2dp"
+            android:text="OBD-II Reader"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/white" />
 
         <TextView
             android:id="@+id/tvProtocol"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Protocollo: --"
-            android:textColor="#888AAA"
-            android:textSize="13sp"
             android:gravity="center"
-            android:paddingBottom="16dp"/>
+            android:paddingBottom="4dp"
+            android:text="Protocollo: --"
+            android:textSize="16sp"
+            android:textColor="@android:color/white" />
 
-        <!-- STATUS -->
+        <TextView
+            android:id="@+id/tvElmVersion"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:paddingBottom="2dp"
+            android:text="ELM327: --"
+            android:textSize="13sp"
+            android:textColor="#B0BEC5" />
+
+        <TextView
+            android:id="@+id/tvVin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:paddingBottom="12dp"
+            android:text="VIN: --"
+            android:textSize="13sp"
+            android:textColor="#B0BEC5" />
+
         <TextView
             android:id="@+id/tvStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:padding="6dp"
             android:text="Inizializzazione..."
-            android:textColor="#A0A8FF"
-            android:textSize="14sp"
-            android:background="#2A2A40"
-            android:padding="12dp"
-            android:layout_marginBottom="16dp"/>
+            android:textSize="16sp"
+            android:textColor="@android:color/white" />
 
-        <!-- PROGRESS BAR -->
         <ProgressBar
             android:id="@+id/progressBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:visibility="gone"
-            android:layout_marginBottom="8dp"
-            android:indeterminateTint="#7B68EE"/>
+            android:layout_marginBottom="6dp"
+            android:visibility="gone" />
 
-        <!-- PULSANTI CONNESSIONE -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Protocollo forzato:"
+            android:textSize="14sp"
+            android:textColor="@android:color/white"
+            android:paddingBottom="2dp" />
+
+        <RadioGroup
+            android:id="@+id/rgProtocol"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:orientation="vertical">
+
+            <RadioButton
+                android:id="@+id/rbAuto"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Auto (ATSP0)"
+                android:textSize="14sp"
+                android:textColor="@android:color/white"
+                android:checked="true" />
+
+            <RadioButton
+                android:id="@+id/rbSP3"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ISO 9141-2 — ATSP3 (Audi/VW)"
+                android:textSize="14sp"
+                android:textColor="@android:color/white"
+                android:checked="false" />
+
+            <RadioButton
+                android:id="@+id/rbSP5"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="KWP Fast Init — ATSP5"
+                android:textSize="14sp"
+                android:textColor="@android:color/white"
+                android:checked="false" />
+
+        </RadioGroup>
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="12dp">
+            android:layout_marginBottom="8dp"
+            android:orientation="horizontal">
 
             <Button
                 android:id="@+id/btnScan"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
                 android:layout_weight="1"
-                android:text="🔍 Cerca dispositivi"
-                android:backgroundTint="#4A4AFF"
-                android:textColor="#FFFFFF"
-                android:layout_marginEnd="6dp"/>
+                android:text="Cerca dispositivi"
+                android:textAllCaps="false"
+                android:textSize="16sp"
+                android:minHeight="44dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp" />
 
             <Button
                 android:id="@+id/btnDisconnect"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
                 android:layout_weight="1"
-                android:text="🔌 Disconnetti"
-                android:backgroundTint="#FF4A6A"
-                android:textColor="#FFFFFF"
-                android:layout_marginStart="6dp"/>
+                android:text="Disconnetti"
+                android:textAllCaps="false"
+                android:textSize="16sp"
+                android:minHeight="44dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp" />
         </LinearLayout>
 
-        <!-- CARD RPM -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#252540"
-            android:padding="16dp"
-            android:layout_marginBottom="10dp">
+            android:layout_marginBottom="6dp">
 
             <TextView
                 android:id="@+id/tvRpm"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="⚙️  RPM: --"
-                android:textColor="#7BE8FF"
-                android:textSize="22sp"
-                android:textStyle="bold"/>
+                android:text="RPM: --"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/white" />
         </LinearLayout>
 
-        <!-- CARD VELOCITÀ -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#252540"
-            android:padding="16dp"
-            android:layout_marginBottom="10dp">
+            android:layout_marginBottom="6dp">
 
             <TextView
                 android:id="@+id/tvSpeed"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="🚗  Velocità: --"
-                android:textColor="#7BFFB0"
-                android:textSize="22sp"
-                android:textStyle="bold"/>
+                android:text="Velocita: --"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/white" />
         </LinearLayout>
 
-        <!-- CARD TEMPERATURA -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#252540"
-            android:padding="16dp"
-            android:layout_marginBottom="10dp">
+            android:layout_marginBottom="6dp">
 
             <TextView
                 android:id="@+id/tvTemp"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="🌡️  Temperatura: --"
-                android:textColor="#FFB07B"
-                android:textSize="22sp"
-                android:textStyle="bold"/>
+                android:text="Temperatura: --"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/white" />
         </LinearLayout>
 
-        <!-- CARD DTC -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#252540"
-            android:padding="16dp"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="10dp">
 
             <TextView
                 android:id="@+id/tvDtc"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="⚠️  DTC: --"
-                android:textColor="#FF8080"
-                android:textSize="18sp"
-                android:textStyle="bold"/>
+                android:text="DTC: --"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/white" />
         </LinearLayout>
 
-        <!-- PULSANTI DATI -->
         <Button
             android:id="@+id/btnReadOnce"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="📡 Leggi tutti i dati"
-            android:backgroundTint="#4A8CFF"
-            android:textColor="#FFFFFF"
-            android:layout_marginBottom="8dp"/>
+            android:layout_marginBottom="6dp"
+            android:text="Leggi tutti i dati"
+            android:textAllCaps="false"
+            android:textSize="16sp"
+            android:minHeight="44dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp" />
 
         <Button
             android:id="@+id/btnStartPolling"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="🔁 Avvia aggiornamento continuo"
-            android:backgroundTint="#4ABA8C"
-            android:textColor="#FFFFFF"
-            android:layout_marginBottom="8dp"/>
+            android:layout_marginBottom="6dp"
+            android:text="Avvia aggiornamento continuo"
+            android:textAllCaps="false"
+            android:textSize="16sp"
+            android:minHeight="44dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp" />
 
         <Button
             android:id="@+id/btnClearDtc"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="🗑️ Cancella codici errore (Mode 04)"
-            android:backgroundTint="#8B4AFF"
-            android:textColor="#FFFFFF"
-            android:layout_marginBottom="8dp"/>
+            android:layout_marginBottom="6dp"
+            android:text="Cancella codici errore (Mode 04)"
+            android:textAllCaps="false"
+            android:textSize="16sp"
+            android:minHeight="44dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp" />
+
+        <ScrollView
+            android:id="@+id/scrollLog"
+            android:layout_width="match_parent"
+            android:layout_height="180dp"
+            android:layout_marginBottom="6dp"
+            android:background="#1A237E"
+            android:padding="6dp">
+
+            <TextView
+                android:id="@+id/tvLog"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:lineSpacingExtra="2dp"
+                android:textColor="#B0BEC5"
+                android:textSize="13sp" />
+        </ScrollView>
 
     </LinearLayout>
 </ScrollView>
