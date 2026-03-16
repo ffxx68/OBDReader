@@ -16,6 +16,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.widget.NestedScrollView;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -28,6 +29,7 @@ public class MainActivity extends AppCompatActivity {
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private static final int PERMISSION_REQUEST_CODE = 100;
     private static final int READ_INTERVAL_MS = 2000; // polling ogni 2 secondi
+    private static final int MAX_LOG_LINES = 200;     // ~100 scambi comando/risposta
 
     // Bluetooth
     private BluetoothAdapter bluetoothAdapter;
@@ -48,7 +50,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvRpm;
     private TextView tvSpeed;
     private TextView tvTemp;
-    private TextView tvDtc;
+    private TextView tvFuelRate;
     private TextView tvProtocol;
     private TextView tvElmVersion;
     private TextView tvVin;
@@ -56,10 +58,9 @@ public class MainActivity extends AppCompatActivity {
     private Button btnDisconnect;
     private Button btnReadOnce;
     private Button btnStartPolling;
-    private Button btnClearDtc;
     private ProgressBar progressBar;
     private TextView tvLog;
-    private ScrollView scrollLog;
+    private NestedScrollView scrollLog;
     private RadioGroup rgProtocol;
 
     // Lista dispositivi accoppiati
@@ -82,7 +83,7 @@ public class MainActivity extends AppCompatActivity {
         tvRpm       = findViewById(R.id.tvRpm);
         tvSpeed     = findViewById(R.id.tvSpeed);
         tvTemp      = findViewById(R.id.tvTemp);
-        tvDtc       = findViewById(R.id.tvDtc);
+        tvFuelRate  = findViewById(R.id.tvFuelRate);
         tvProtocol  = findViewById(R.id.tvProtocol);
         tvElmVersion = findViewById(R.id.tvElmVersion);
         tvVin        = findViewById(R.id.tvVin);
@@ -90,7 +91,6 @@ public class MainActivity extends AppCompatActivity {
         btnDisconnect   = findViewById(R.id.btnDisconnect);
         btnReadOnce     = findViewById(R.id.btnReadOnce);
         btnStartPolling = findViewById(R.id.btnStartPolling);
-        btnClearDtc     = findViewById(R.id.btnClearDtc);
         progressBar     = findViewById(R.id.progressBar);
         tvLog           = findViewById(R.id.tvLog);
         scrollLog       = findViewById(R.id.scrollLog);
@@ -119,7 +119,6 @@ public class MainActivity extends AppCompatActivity {
         btnDisconnect.setOnClickListener(v -> disconnect());
         btnReadOnce.setOnClickListener(v -> readAllDataOnce());
         btnStartPolling.setOnClickListener(v -> togglePolling());
-        btnClearDtc.setOnClickListener(v -> clearDtcCodes());
     }
 
     // ─── PERMESSI ────────────────────────────────────────────────────────────
@@ -223,7 +222,20 @@ public class MainActivity extends AppCompatActivity {
 
                 isConnected = true;
                 mainHandler.post(() -> {
-                    showStatus("Connesso a: " + device.getName());
+                    showStatus("Connesso alla ECU");
+                    showProgress(false);
+                    btnScan.setEnabled(true);
+                    btnDisconnect.setEnabled(true);
+                    setDataButtonsEnabled(true);
+                });
+
+            } catch (EcuConnectionException e) {
+                // BT connesso ma la ECU non risponde
+                isConnected = true; // rimane connesso al BT, i pulsanti dati restano attivi
+                mainHandler.post(() -> {
+                    showStatus("Connesso a: " + device.getName()
+                            + "\nErrore comunicazione ECU: " + e.getMessage()
+                            + "\nVerifica protocollo o chiave in posizione ON.");
                     showProgress(false);
                     btnScan.setEnabled(true);
                     btnDisconnect.setEnabled(true);
@@ -233,7 +245,7 @@ public class MainActivity extends AppCompatActivity {
             } catch (IOException e) {
                 isConnected = false;
                 mainHandler.post(() -> {
-                    showStatus("Errore connessione: " + e.getMessage()
+                    showStatus("Errore connessione BT: " + e.getMessage()
                             + "\nAssicurati che l'ELM327 sia acceso e nel raggio BT.");
                     showProgress(false);
                     btnScan.setEnabled(true);
@@ -275,8 +287,18 @@ public class MainActivity extends AppCompatActivity {
 
         sendCommand(protoCmd, 1000);
 
+        // Verifica comunicazione con la ECU tramite Mode 01 PID 00 (PID supportati)
+        String ecuTestRaw = sendCommand("0100", 5000);
+        boolean ecuOk = !ecuTestRaw.isEmpty()
+                && !ecuTestRaw.toUpperCase().contains("NO DATA")
+                && !ecuTestRaw.toUpperCase().contains("UNABLE TO CONNECT")
+                && !ecuTestRaw.toUpperCase().contains("BUS INIT")
+                && !ecuTestRaw.toUpperCase().contains("ERROR")
+                && !ecuTestRaw.contains("?")
+                && ecuTestRaw.toUpperCase().contains("41");
+
         // Leggi VIN (Mode 09 PID 02) — non sempre supportato da tutti i veicoli
-        String rawVin = sendCommand("0902", 1500);
+        String rawVin = ecuOk ? sendCommand("0902", 1500) : "";
         String vin = parseVin(rawVin);
 
         final String label   = protoLabel;
@@ -287,6 +309,15 @@ public class MainActivity extends AppCompatActivity {
             tvElmVersion.setText("ELM327: " + elmVer);
             tvVin.setText("VIN: " + vinText);
         });
+
+        if (!ecuOk) {
+            throw new EcuConnectionException(ecuTestRaw.trim().isEmpty() ? "nessuna risposta" : ecuTestRaw.trim());
+        }
+    }
+
+    /** Eccezione specifica per errori di comunicazione con la ECU (distinta da errori BT). */
+    static class EcuConnectionException extends IOException {
+        EcuConnectionException(String message) { super(message); }
     }
 
     /**
@@ -348,7 +379,18 @@ public class MainActivity extends AppCompatActivity {
         final String logLine = ">> " + command + "\n<< " + result + "\n";
         mainHandler.post(() -> {
             tvLog.append(logLine);
-            scrollLog.post(() -> scrollLog.fullScroll(ScrollView.FOCUS_DOWN));
+            // Mantieni il buffer entro MAX_LOG_LINES righe
+            String current = tvLog.getText().toString();
+            String[] lines = current.split("\n", -1);
+            if (lines.length > MAX_LOG_LINES) {
+                int excess = lines.length - MAX_LOG_LINES;
+                StringBuilder trimmed = new StringBuilder();
+                for (int i = excess; i < lines.length; i++) {
+                    trimmed.append(lines[i]).append("\n");
+                }
+                tvLog.setText(trimmed.toString());
+            }
+            scrollLog.post(() -> scrollLog.fullScroll(NestedScrollView.FOCUS_DOWN));
         });
 
         return result;
@@ -443,10 +485,17 @@ public class MainActivity extends AppCompatActivity {
         String tempRaw = sendCommand("0105");
         data.tempCelsius = parseTemp(tempRaw);
 
-        // Codici errore — Mode 03 (nessun PID)
-        // Risposta: "43 P0300 P0301 ..." oppure "43 00" se nessun errore
-        String dtcRaw = sendCommand("03", 1000);
-        data.dtcCodes = parseDtc(dtcRaw);
+        // MAF — PID 0x10 — Formula: ((A*256)+B)/100 → g/s
+        String mafRaw = sendCommand("0110");
+        data.mafGps = parseMaf(mafRaw);
+
+        // MAP — PID 0x0B — Formula: A → kPa (pressione collettore, usata per Speed-Density)
+        String mapRaw = sendCommand("010B");
+        data.mapKpa = parseMap(mapRaw);
+
+        // IAT — PID 0x0F — Formula: A-40 → °C (temperatura aria aspirata)
+        String iatRaw = sendCommand("010F");
+        data.iatCelsius = parseIat(iatRaw);
 
         return data;
     }
@@ -489,70 +538,59 @@ public class MainActivity extends AppCompatActivity {
         return b.isEmpty() ? -1 : b.get(0) - 40;
     }
 
-    /**
-     * Decodifica i codici DTC dal formato ELM327.
-     * Ogni DTC è codificato in 2 byte:
-     *   Bit 7-6 del primo byte → tipo (P/C/B/U)
-     *   Resto → codice numerico
-     * Esempio: 43 01 03 → P0103
-     */
-    private String parseDtc(String raw) {
-        if (raw == null || raw.isEmpty()
-                || raw.contains("NO DATA")
-                || raw.contains("NODATA")
-                || raw.contains("OK")) {
-            return "Nessun codice errore";
-        }
-
-        String clean = raw.replaceAll("\\s+", "").toUpperCase();
-        if (!clean.startsWith("43")) return "Risposta non valida: " + raw;
-
-        String hexData = clean.substring(2);
-        List<String> codes = new ArrayList<>();
-        String[] types = {"P", "C", "B", "U"};
-
-        for (int i = 0; i + 3 < hexData.length(); i += 4) {
-            try {
-                int firstNibble = Integer.parseInt(hexData.substring(i, i + 1), 16);
-                int typeIdx = (firstNibble >> 2) & 0x03;
-                int num1 = firstNibble & 0x03;
-                String rest = hexData.substring(i + 1, i + 4);
-                String code = types[typeIdx] + num1 + rest;
-                if (!code.equals("P0000")) codes.add(code);
-            } catch (NumberFormatException ignored) {}
-        }
-
-        return codes.isEmpty() ? "Nessun codice errore" : String.join(", ", codes);
+    private float parseMaf(String raw) {
+        List<Integer> b = extractBytes(raw, "4110");
+        if (b.size() < 2) return -1f;
+        return ((b.get(0) * 256) + b.get(1)) / 100.0f;
     }
 
-    // ─── CANCELLAZIONE DTC ───────────────────────────────────────────────────
+    private int parseMap(String raw) {
+        List<Integer> b = extractBytes(raw, "410B");
+        return b.isEmpty() ? -1 : b.get(0); // kPa
+    }
 
-    private void clearDtcCodes() {
-        if (!isConnected) return;
-        new AlertDialog.Builder(this)
-                .setTitle("Cancella codici errore")
-                .setMessage("Sei sicuro? Questo cancellerà tutti i DTC dalla centralina.")
-                .setPositiveButton("Sì, cancella", (d, w) -> {
-                    showProgress(true);
-                    new Thread(() -> {
-                        try {
-                            // Mode 04: Clear DTC — non ha PID, risposta: "44"
-                            String resp = sendCommand("04", 1000);
-                            mainHandler.post(() -> {
-                                tvDtc.setText("DTC: Cancellati");
-                                showStatus("Codici errore cancellati");
-                                showProgress(false);
-                            });
-                        } catch (IOException e) {
-                            mainHandler.post(() -> {
-                                showStatus("Errore cancellazione: " + e.getMessage());
-                                showProgress(false);
-                            });
-                        }
-                    }).start();
-                })
-                .setNegativeButton("Annulla", null)
-                .show();
+    private int parseIat(String raw) {
+        List<Integer> b = extractBytes(raw, "410F");
+        return b.isEmpty() ? -100 : b.get(0) - 40; // °C, -100 = non disponibile
+    }
+
+    /**
+     * Calcola il consumo istantaneo in L/100km dal MAF e dalla velocità.
+     * Formula: L/100km = (MAF / AFR / densità_gasolio) / (speed / 3600) * 100
+     *   AFR gasolio stechiometrico = 14.5
+     *   densità gasolio ≈ 0.84 kg/L
+     */
+    private float calcFuelRateMaf(float mafGps, int speedKmh) {
+        if (mafGps < 0 || speedKmh <= 0) return -1f;
+        float litersPerSec = mafGps / 14.5f / 0.84f;
+        float speedMs = speedKmh / 3.6f;
+        return (litersPerSec / speedMs) * 100f;
+    }
+
+    /**
+     * Calcola il consumo istantaneo con metodo Speed-Density (MAP + cilindrata + VE).
+     * Formula portata aria:
+     *   airflow (g/s) = (displacement_L * RPM/2 * VE * MAP_kPa * M_air) / (R * T_K * 60)
+     *   dove M_air=28.97 g/mol, R=8.314 J/(mol·K)
+     *   T_K = temperatura aria aspirata (IAT) in Kelvin — letta dalla ECU, fallback 25°C
+     *
+     * Parametri fissi per diesel turbo 1.9 TDI tipico:
+     *   cilindrata = 1.9 L, VE = 0.92
+     */
+    private float calcFuelRateSpeedDensity(int rpm, int speedKmh, int mapKpa, int iatCelsius) {
+        if (rpm <= 0 || speedKmh <= 0 || mapKpa <= 0) return -1f;
+        final float displacement = 1.9f;  // litri
+        final float ve           = 0.92f; // efficienza volumetrica turbo diesel
+        final float mAir         = 28.97f;
+        final float R            = 8.314f;
+        // Usa IAT reale dalla ECU se disponibile, altrimenti 25°C
+        final float tKelvin = (iatCelsius > -100) ? (iatCelsius + 273.15f) : 298f;
+        // Portata aria stimata in g/s
+        float airflowGs = (displacement * (rpm / 2f) * ve * mapKpa * 1000f * mAir)
+                        / (R * tKelvin * 60f * 1000f);
+        float litersPerSec = airflowGs / 14.5f / 0.84f;
+        float speedMs = speedKmh / 3.6f;
+        return (litersPerSec / speedMs) * 100f;
     }
 
     // ─── UI HELPERS ──────────────────────────────────────────────────────────
@@ -567,10 +605,20 @@ public class MainActivity extends AppCompatActivity {
                 : "Velocita: N/D");
 
         tvTemp.setText(data.tempCelsius > -40
-                ? "Temperatura: " + data.tempCelsius + " C"
-                : "Temperatura: N/D");
+                ? "Temp: " + data.tempCelsius + " C"
+                : "Temp: N/D");
 
-        tvDtc.setText("DTC: " + data.dtcCodes);
+        float fuelMaf = calcFuelRateMaf(data.mafGps, data.speedKmh);
+        float fuelSd  = calcFuelRateSpeedDensity(data.rpm, data.speedKmh, data.mapKpa, data.iatCelsius);
+
+        String mafStr = fuelMaf > 0
+                ? String.format(java.util.Locale.US, "%.1f", fuelMaf)
+                : (data.mafGps >= 0 && data.speedKmh == 0 ? "fermo" : "N/D");
+        String sdStr = fuelSd > 0
+                ? String.format(java.util.Locale.US, "%.1f", fuelSd)
+                : (data.speedKmh == 0 ? "fermo" : "N/D");
+
+        tvFuelRate.setText("Consumo: " + mafStr + " / " + sdStr + " L/100km");
     }
 
     private void showStatus(String msg) {
@@ -584,7 +632,6 @@ public class MainActivity extends AppCompatActivity {
     private void setDataButtonsEnabled(boolean enabled) {
         btnReadOnce.setEnabled(enabled);
         btnStartPolling.setEnabled(enabled);
-        btnClearDtc.setEnabled(enabled);
     }
 
     // ─── DISCONNESSIONE ──────────────────────────────────────────────────────
@@ -599,8 +646,8 @@ public class MainActivity extends AppCompatActivity {
         setDataButtonsEnabled(false);
         tvRpm.setText("RPM: --");
         tvSpeed.setText("Velocita: --");
-        tvTemp.setText("Temperatura: --");
-        tvDtc.setText("DTC: --");
+        tvTemp.setText("Temp: --");
+        tvFuelRate.setText("Consumo: --");
         tvProtocol.setText("Protocollo: --");
         tvElmVersion.setText("ELM327: --");
         tvVin.setText("VIN: --");
@@ -624,6 +671,8 @@ public class MainActivity extends AppCompatActivity {
         int rpm = -1;
         int speedKmh = -1;
         int tempCelsius = -41; // -41 = non valido (minimo valido è -40°C)
-        String dtcCodes = "N/D";
+        float mafGps = -1f;   // g/s, -1 = non disponibile
+        int mapKpa = -1;      // kPa, -1 = non disponibile
+        int iatCelsius = -100; // °C, -100 = non disponibile
     }
 }

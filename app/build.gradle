@@ -2,6 +2,22 @@ plugins {
     id 'com.android.application'
 }
 
+// Legge le credenziali keystore da local.properties
+def localProps = new Properties()
+def localPropsFile = rootProject.file('local.properties')
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+
+// Legge il versionCode corrente da version.properties (creato automaticamente se assente)
+def versionPropsFile = file('version.properties')
+if (!versionPropsFile.exists()) {
+    versionPropsFile.text = 'VERSION_CODE=12\n'
+}
+def versionProps = new Properties()
+versionPropsFile.withInputStream { versionProps.load(it) }
+def currentVersionCode = versionProps['VERSION_CODE'].toInteger()
+
 android {
     compileSdk 36
     namespace 'com.ffxx68.obdreader'
@@ -10,13 +26,23 @@ android {
         applicationId "com.ffxx68.obdreader"
         minSdk 23          // Android 6.0 — supporto BT classico e permessi runtime
         targetSdk 36
-        versionCode 7
+        versionCode currentVersionCode
         versionName "1.1"
+    }
+
+    signingConfigs {
+        release {
+            storeFile     file(localProps['KEYSTORE_PATH'])
+            storePassword localProps['KEYSTORE_PASSWORD']
+            keyAlias      localProps['KEY_ALIAS']
+            keyPassword   localProps['KEY_PASSWORD']
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig signingConfigs.release
         }
     }
 
@@ -29,4 +55,15 @@ android {
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
+}
+
+// Auto-incrementa versionCode in version.properties dopo ogni bundleRelease riuscita
+tasks.whenTaskAdded { task ->
+    if (task.name == 'bundleRelease') {
+        task.doLast {
+            def newCode = currentVersionCode + 1
+            versionPropsFile.text = "VERSION_CODE=${newCode}\n"
+            println "✅ versionCode aggiornato: ${currentVersionCode} → ${newCode}"
+        }
+    }
 }

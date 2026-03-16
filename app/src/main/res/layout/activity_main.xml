@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fillViewport="false">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -146,62 +152,65 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="6dp">
+            android:layout_marginBottom="6dp"
+            android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/tvRpm"
-                android:layout_width="match_parent"
+            <LinearLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="RPM: --"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textColor="@android:color/white" />
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvRpm"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="RPM: --"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="@android:color/white" />
+
+                <TextView
+                    android:id="@+id/tvSpeed"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Velocita: --"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="@android:color/white" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvTemp"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Temp: --"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:gravity="start"
+                    android:textColor="@android:color/white" />
+
+                <TextView
+                    android:id="@+id/tvFuelRate"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Consumo: --"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:gravity="start"
+                    android:textColor="@android:color/white" />
+
+            </LinearLayout>
+
         </LinearLayout>
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="6dp">
-
-            <TextView
-                android:id="@+id/tvSpeed"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Velocita: --"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textColor="@android:color/white" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="6dp">
-
-            <TextView
-                android:id="@+id/tvTemp"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Temperatura: --"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textColor="@android:color/white" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="10dp">
-
-            <TextView
-                android:id="@+id/tvDtc"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="DTC: --"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textColor="@android:color/white" />
-        </LinearLayout>
 
         <Button
             android:id="@+id/btnReadOnce"
@@ -227,35 +236,28 @@
             android:paddingTop="8dp"
             android:paddingBottom="8dp" />
 
-        <Button
-            android:id="@+id/btnClearDtc"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="6dp"
-            android:text="Cancella codici errore (Mode 04)"
-            android:textAllCaps="false"
-            android:textSize="16sp"
-            android:minHeight="44dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp" />
-
-        <ScrollView
-            android:id="@+id/scrollLog"
-            android:layout_width="match_parent"
-            android:layout_height="180dp"
-            android:layout_marginBottom="6dp"
-            android:background="#1A237E"
-            android:padding="6dp">
-
-            <TextView
-                android:id="@+id/tvLog"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:lineSpacingExtra="2dp"
-                android:textColor="#B0BEC5"
-                android:textSize="13sp" />
-        </ScrollView>
 
     </LinearLayout>
 </ScrollView>
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/scrollLog"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_margin="6dp"
+        android:background="#1A237E"
+        android:padding="6dp"
+        android:fillViewport="true">
+
+        <TextView
+            android:id="@+id/tvLog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:lineSpacingExtra="2dp"
+            android:textColor="#B0BEC5"
+            android:textSize="13sp" />
+    </androidx.core.widget.NestedScrollView>
+
+</LinearLayout>
