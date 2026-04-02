@@ -1,0 +1,19 @@
+# Built files
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Build directories
+build/
+.gradle/
+local.properties
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+.DS_Store
+
+# Keystore (never commit these!)
+*.jks
+*.keystore
