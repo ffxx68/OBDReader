@@ -2,12 +2,23 @@ plugins {
     id 'com.android.application'
 }
 
-// Legge le credenziali keystore da local.properties
+// Legge le credenziali keystore da local.properties o environment variables
 def localProps = new Properties()
 def localPropsFile = rootProject.file('local.properties')
 if (localPropsFile.exists()) {
     localPropsFile.withInputStream { localProps.load(it) }
 }
+
+// Funzione helper per ottenere proprietà da file o env
+def getSigningProperty = { key ->
+    return localProps[key] ?: System.getenv(key)
+}
+
+// Verifica se tutte le proprietà di signing sono disponibili
+def hasSigningConfig = getSigningProperty('KEYSTORE_PATH') &&
+                        getSigningProperty('KEYSTORE_PASSWORD') &&
+                        getSigningProperty('KEY_ALIAS') &&
+                        getSigningProperty('KEY_PASSWORD')
 
 // Legge il versionCode corrente da version.properties (creato automaticamente se assente)
 def versionPropsFile = file('version.properties')
@@ -27,22 +38,26 @@ android {
         minSdk 23          // Android 6.0 — supporto BT classico e permessi runtime
         targetSdk 36
         versionCode currentVersionCode
-        versionName "1.2"
+        versionName "1.3"
     }
 
     signingConfigs {
-        release {
-            storeFile     file(localProps['KEYSTORE_PATH'])
-            storePassword localProps['KEYSTORE_PASSWORD']
-            keyAlias      localProps['KEY_ALIAS']
-            keyPassword   localProps['KEY_PASSWORD']
+        if (hasSigningConfig) {
+            release {
+                storeFile     file(getSigningProperty('KEYSTORE_PATH'))
+                storePassword getSigningProperty('KEYSTORE_PASSWORD')
+                keyAlias      getSigningProperty('KEY_ALIAS')
+                keyPassword   getSigningProperty('KEY_PASSWORD')
+            }
         }
     }
 
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.release
+            if (hasSigningConfig) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
