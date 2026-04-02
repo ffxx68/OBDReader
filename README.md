@@ -29,7 +29,8 @@ Native Android app to read vehicle data via Bluetooth ELM327 adapter.
 1. Insert the ELM327 adapter into the vehicle's OBD-II port
 2. Go to **Settings → Bluetooth** on your Android device
 3. Pair the ELM327 device (PIN: `1234` or `6789` or `0000`)
-4. Open the app → Go to **Settings** page → **Search devices** → select your ELM327 device from the list → **Connect**
+4. Start vehicle ignition (engine running)
+5. Open the app → Go to **Settings** page → **Search devices** → select your ELM327 device from the list → **Connect**
 
 ---
 
