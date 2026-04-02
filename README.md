@@ -1,90 +1,53 @@
-# OBD-II Reader — App Android (Java)
+# OBD-II Reader — Android App (Java)
 
-App nativa Android per leggere dati dal veicolo tramite adattatore Bluetooth ELM327.
-
----
-
-## Funzionalità
-
-| Funzione | Dettaglio |
-|---|---|
-| **RPM motore** | PID 010C — Formula: (A×256+B)/4 |
-| **Velocità** | PID 010D — Formula: A km/h |
-| **Temperatura** | PID 0105 — Formula: A−40 °C |
-| **Codici errore DTC** | Mode 03 — Decodifica P/C/B/U |
-| **Cancella DTC** | Mode 04 — Resetta la spia motore |
-| **Polling continuo** | Aggiornamento ogni 2 secondi |
+Native Android app to read vehicle data via Bluetooth ELM327 adapter.
 
 ---
 
-## Come aprire su Replit (online, senza installare nulla)
+## Features
 
-1. Vai su [replit.com](https://replit.com) e crea un account gratuito
-2. Clicca **"Create Repl"** → cerca template **"Android (Gradle)"**
-3. Carica questa cartella (o copia i file nelle posizioni indicate)
-4. Clicca **Run** → Replit compila e genera l'APK
-5. Scarica l'APK e installalo sul tuo telefono
-
----
-
-## Come aprire su Gitpod (alternativa)
-
-1. Metti il progetto su GitHub
-2. Vai su `gitpod.io/#https://github.com/tuoutente/OBDReader`
-3. Nel terminale: `./gradlew assembleDebug`
-4. Scarica `app/build/outputs/apk/debug/app-debug.apk`
+- Bluetooth connectivity to ELM327 OBD-II devices
+- Real-time data display:
+  - Engine RPM
+  - Vehicle speed
+  - Coolant temperature
+  - Distance traveled
+  - Average speed
+  - Fuel consumption, instantaneous and average
+- Fuel consumption and distance data logging
 
 ---
 
-## Struttura del progetto
+## Hardware Requirements
 
-```
-OBDReader/
-├── app/
-│   ├── src/main/
-│   │   ├── AndroidManifest.xml
-│   │   ├── java/com/example/obdreader/
-│   │   │   └── MainActivity.java       ← tutta la logica BT + OBD
-│   │   └── res/
-│   │       ├── layout/activity_main.xml ← interfaccia grafica
-│   │       ├── values/styles.xml
-│   │       └── drawable/ic_launcher.xml
-│   └── build.gradle
-├── build.gradle
-├── settings.gradle
-└── gradle.properties
-```
-
----
-
-## Prerequisiti hardware
-
-- Adattatore **ELM327 v1.5+** Bluetooth (Classic BT, non BLE)
+- **ELM327 v2.3+** Bluetooth adapter
 - Android 6.0+ (API 23)
-- Veicolo con porta OBD-II (tutti i veicoli EU dal 2001, US dal 1996)
+- Vehicle with OBD-II port (all EU vehicles from 2001, US from 1996)
 
-## Prima dell'uso
+## Before Using
 
-1. Inserisci l'adattatore ELM327 nella porta OBD-II del veicolo
-2. Vai in **Impostazioni → Bluetooth** sul tuo Android
-3. Accoppia il dispositivo ELM327 (PIN: `1234` o `6789` o `0000`)
-4. Apri l'app → **Cerca dispositivi** → seleziona l'ELM327
+1. Insert the ELM327 adapter into the vehicle's OBD-II port
+2. Go to **Settings → Bluetooth** on your Android device
+3. Pair the ELM327 device (PIN: `1234` or `6789` or `0000`)
+4. Open the app → Go to **Settings** page → **Search devices** → select your ELM327 device from the list → **Connect**
 
 ---
 
-## Comandi ELM327 utilizzati
+## Main ELM327 Commands Used
 
-| Comando | Scopo |
+| Command | Purpose |
 |---|---|
 | `ATZ` | Reset chip |
 | `ATE0` | Echo OFF |
 | `ATL0` | Linefeed OFF |
-| `ATS0` | Spazi OFF |
+| `ATS0` | Spaces OFF |
 | `ATH0` | Headers OFF |
 | `ATAT1` | Adaptive timing |
-| `ATSP0` | Auto-detect protocollo |
-| `010C` | Leggi RPM |
-| `010D` | Leggi velocità |
-| `0105` | Leggi temperatura |
-| `03` | Leggi DTC |
-| `04` | Cancella DTC |
+| `ATSP0` | Auto-detect protocol |
+| `010C` | Read engine RPM |
+| `010D` | Read speed |
+| `0105` | Read coolant temperature |
+| `0110` | Read MAF (mass air flow) |
+| `010B` | Read MAP (manifold pressure) |
+| `010F` | Read IAT (intake air temperature) |
+
