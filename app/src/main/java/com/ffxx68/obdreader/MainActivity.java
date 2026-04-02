@@ -4,6 +4,8 @@ import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -12,11 +14,9 @@ import android.os.Looper;
 import android.view.View;
 import android.widget.*;
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-import androidx.core.widget.NestedScrollView;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -30,6 +30,14 @@ public class MainActivity extends AppCompatActivity {
     private static final int PERMISSION_REQUEST_CODE = 100;
     private static final int READ_INTERVAL_MS = 2000; // polling ogni 2 secondi
     private static final int MAX_LOG_LINES = 200;     // ~100 scambi comando/risposta
+    private static final String PREFS_NAME = "OBDReaderPrefs";
+    private static final String PREF_DEVICE_NAME = "selectedDeviceName";
+    private static final String PREF_DEVICE_ADDRESS = "selectedDeviceAddress";
+    private static final String PREF_PROTOCOL = "selectedProtocol";
+
+    // Variabili statiche per condividere dati con SettingsActivity
+    private static StringBuilder logBuffer = new StringBuilder();
+    private static int selectedProtocol = R.id.rbAuto; // Default: Auto
 
     // Bluetooth
     private BluetoothAdapter bluetoothAdapter;
@@ -40,6 +48,11 @@ public class MainActivity extends AppCompatActivity {
     // Stato connessione
     private boolean isConnected = false;
     private boolean isPolling = false;
+    private boolean shouldStayConnected = false; // Flag per riconnessione automatica
+    private int consecutiveBTErrors = 0;
+    private int consecutiveNoData = 0; // Contatore per risposte "NO DATA" dall'ECU
+    private static final int MAX_ERRORS_BEFORE_RECONNECT = 3;
+    private static final int MAX_NO_DATA_BEFORE_RETRY = 5; // Dopo 5 "NO DATA" riprova init ECU
 
     // Handler per aggiornamenti UI dal thread BT
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -50,53 +63,75 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvRpm;
     private TextView tvSpeed;
     private TextView tvTemp;
-    private TextView tvFuelRate;
+    private TextView tvFuelRateInstantMaf;
+    private TextView tvFuelRateInstantSd;
+    private TextView tvTotalKm;
+    private TextView tvAvgSpeed;
+    private TextView tvAvgFuelMaf;
+    private TextView tvAvgFuelSd;
     private TextView tvProtocol;
     private TextView tvElmVersion;
     private TextView tvVin;
-    private Button btnScan;
+    private Button btnConnect;
     private Button btnDisconnect;
-    private Button btnReadOnce;
-    private Button btnStartPolling;
     private ProgressBar progressBar;
-    private TextView tvLog;
-    private NestedScrollView scrollLog;
-    private RadioGroup rgProtocol;
+    private ImageButton btnSettings;
 
-    // Lista dispositivi accoppiati
-    private final List<BluetoothDevice> pairedDevices = new ArrayList<>();
+    // Statistiche di viaggio
+    private double totalDistanceKm = 0.0;
+    private double totalFuelMafLiters = 0.0;
+    private double totalFuelSdLiters = 0.0;
+    private long totalSpeedSum = 0;
+    private int speedSampleCount = 0;
+    private long lastUpdateTimeMs = 0;
+
+    // Gestione log viaggi
+    private TripLogManager tripLogManager;
+    private TripLog currentTrip;
+
+    // Lista dei PID supportati dalla modalità 01 (PID 01-20)
+    private List<Integer> supportedPids01 = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        tripLogManager = new TripLogManager(this);
+
         initViews();
+        loadSavedProtocol();
         initBluetooth();
         setupListeners();
     }
 
     // ─── INIZIALIZZAZIONE ────────────────────────────────────────────────────
 
+    private void loadSavedProtocol() {
+        // Carica il protocollo salvato dalle SharedPreferences
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        selectedProtocol = prefs.getInt(PREF_PROTOCOL, R.id.rbAuto);
+    }
+
     private void initViews() {
         tvStatus    = findViewById(R.id.tvStatus);
         tvRpm       = findViewById(R.id.tvRpm);
         tvSpeed     = findViewById(R.id.tvSpeed);
         tvTemp      = findViewById(R.id.tvTemp);
-        tvFuelRate  = findViewById(R.id.tvFuelRate);
+        tvFuelRateInstantMaf = findViewById(R.id.tvFuelRateInstantMaf);
+        tvFuelRateInstantSd  = findViewById(R.id.tvFuelRateInstantSd);
+        tvTotalKm   = findViewById(R.id.tvTotalKm);
+        tvAvgSpeed  = findViewById(R.id.tvAvgSpeed);
+        tvAvgFuelMaf = findViewById(R.id.tvAvgFuelMaf);
+        tvAvgFuelSd  = findViewById(R.id.tvAvgFuelSd);
         tvProtocol  = findViewById(R.id.tvProtocol);
         tvElmVersion = findViewById(R.id.tvElmVersion);
         tvVin        = findViewById(R.id.tvVin);
-        btnScan         = findViewById(R.id.btnScan);
+        btnConnect      = findViewById(R.id.btnConnect);
         btnDisconnect   = findViewById(R.id.btnDisconnect);
-        btnReadOnce     = findViewById(R.id.btnReadOnce);
-        btnStartPolling = findViewById(R.id.btnStartPolling);
         progressBar     = findViewById(R.id.progressBar);
-        tvLog           = findViewById(R.id.tvLog);
-        scrollLog       = findViewById(R.id.scrollLog);
-        rgProtocol      = findViewById(R.id.rgProtocol);
+        btnSettings     = findViewById(R.id.btnSettings);
 
-        setDataButtonsEnabled(false);
         btnDisconnect.setEnabled(false);
     }
 
@@ -104,51 +139,88 @@ public class MainActivity extends AppCompatActivity {
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (bluetoothAdapter == null) {
             showStatus("Bluetooth non supportato su questo dispositivo");
-            btnScan.setEnabled(false);
+            btnConnect.setEnabled(false);
             return;
         }
         if (!bluetoothAdapter.isEnabled()) {
             showStatus("Attiva il Bluetooth nelle impostazioni, poi riavvia l'app");
         } else {
-            showStatus("Bluetooth attivo. Tocca 'Cerca dispositivi' per iniziare.");
+            // Verifica se c'è un dispositivo salvato
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            String deviceName = prefs.getString(PREF_DEVICE_NAME, null);
+            if (deviceName != null) {
+                showStatus("Pronto. Tocca 'Connetti' per collegarti a " + deviceName);
+            } else {
+                showStatus("Seleziona un dispositivo nelle Impostazioni");
+                btnConnect.setEnabled(false);
+            }
         }
     }
 
     private void setupListeners() {
-        btnScan.setOnClickListener(v -> checkPermissionsAndScan());
+        btnConnect.setOnClickListener(v -> connectToSavedDevice());
         btnDisconnect.setOnClickListener(v -> disconnect());
-        btnReadOnce.setOnClickListener(v -> readAllDataOnce());
-        btnStartPolling.setOnClickListener(v -> togglePolling());
+        btnSettings.setOnClickListener(v -> {
+            Intent intent = new Intent(MainActivity.this, SettingsActivity.class);
+            startActivity(intent);
+        });
     }
 
-    // ─── PERMESSI ────────────────────────────────────────────────────────────
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Verifica se il dispositivo è stato selezionato nelle impostazioni
+        if (!isConnected && bluetoothAdapter != null && bluetoothAdapter.isEnabled()) {
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            String deviceName = prefs.getString(PREF_DEVICE_NAME, null);
+            if (deviceName != null) {
+                showStatus("Pronto. Tocca 'Connetti' per collegarti a " + deviceName);
+                btnConnect.setEnabled(true);
+            } else {
+                showStatus("Seleziona un dispositivo nelle Impostazioni");
+                btnConnect.setEnabled(false);
+            }
+        }
+    }
 
-    private void checkPermissionsAndScan() {
+    // ─── CONNESSIONE AL DISPOSITIVO SALVATO ─────────────────────────────────
+
+    private void connectToSavedDevice() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String deviceAddress = prefs.getString(PREF_DEVICE_ADDRESS, null);
+        String deviceName = prefs.getString(PREF_DEVICE_NAME, null);
+
+        if (deviceAddress == null) {
+            showStatus("Nessun dispositivo selezionato. Vai nelle Impostazioni.");
+            return;
+        }
+
+        // Imposta il flag per riconnessione automatica
+        shouldStayConnected = true;
+        consecutiveBTErrors = 0;
+        consecutiveNoData = 0;
+
+        // Verifica permessi
         List<String> needed = new ArrayList<>();
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
                     != PackageManager.PERMISSION_GRANTED) {
                 needed.add(Manifest.permission.BLUETOOTH_CONNECT);
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
-                    != PackageManager.PERMISSION_GRANTED) {
-                needed.add(Manifest.permission.BLUETOOTH_SCAN);
-            }
-        } else {
-            // Android 6-11
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                    != PackageManager.PERMISSION_GRANTED) {
-                needed.add(Manifest.permission.ACCESS_FINE_LOCATION);
             }
         }
 
         if (!needed.isEmpty()) {
             ActivityCompat.requestPermissions(this,
                     needed.toArray(new String[0]), PERMISSION_REQUEST_CODE);
-        } else {
-            scanAndShowDevices();
+            return;
+        }
+
+        // Ottieni il dispositivo e connetti
+        try {
+            BluetoothDevice device = bluetoothAdapter.getRemoteDevice(deviceAddress);
+            connectToDevice(device);
+        } catch (IllegalArgumentException e) {
+            showStatus("Indirizzo dispositivo non valido: " + deviceAddress);
         }
     }
 
@@ -160,42 +232,17 @@ public class MainActivity extends AppCompatActivity {
         if (requestCode == PERMISSION_REQUEST_CODE) {
             boolean allGranted = true;
             for (int r : grantResults) {
-                if (r != PackageManager.PERMISSION_GRANTED) { allGranted = false; break; }
+                if (r != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false;
+                    break;
+                }
             }
             if (allGranted) {
-                scanAndShowDevices();
+                connectToSavedDevice();
             } else {
-                showStatus("Permessi Bluetooth negati. L'app non puo funzionare.");
+                showStatus("Permessi Bluetooth negati. L'app non può funzionare.");
             }
         }
-    }
-
-    // ─── SCANSIONE E SELEZIONE DISPOSITIVO ──────────────────────────────────
-
-    private void scanAndShowDevices() {
-        Set<BluetoothDevice> bonded = bluetoothAdapter.getBondedDevices();
-        pairedDevices.clear();
-        List<String> names = new ArrayList<>();
-
-        for (BluetoothDevice d : bonded) {
-            pairedDevices.add(d);
-            String name = d.getName() != null ? d.getName() : "Sconosciuto";
-            names.add(name + "\n" + d.getAddress());
-        }
-
-        if (pairedDevices.isEmpty()) {
-            showStatus("Nessun dispositivo accoppiato.\n"
-                    + "Vai in Impostazioni -> Bluetooth e accoppia l'ELM327 (PIN: 1234 o 6789)");
-            return;
-        }
-
-        new AlertDialog.Builder(this)
-                .setTitle("Seleziona dispositivo ELM327")
-                .setItems(names.toArray(new String[0]), (dialog, which) -> {
-                    connectToDevice(pairedDevices.get(which));
-                })
-                .setNegativeButton("Annulla", null)
-                .show();
     }
 
     // ─── CONNESSIONE BLUETOOTH ───────────────────────────────────────────────
@@ -203,7 +250,7 @@ public class MainActivity extends AppCompatActivity {
     private void connectToDevice(BluetoothDevice device) {
         showStatus("Connessione a " + device.getName() + "...");
         showProgress(true);
-        btnScan.setEnabled(false);
+        btnConnect.setEnabled(false);
 
         new Thread(() -> {
             try {
@@ -221,25 +268,32 @@ public class MainActivity extends AppCompatActivity {
                 initElm327();
 
                 isConnected = true;
+                consecutiveBTErrors = 0; // Reset contatore errori
+                consecutiveNoData = 0; // Reset contatore NO DATA
                 mainHandler.post(() -> {
                     showStatus("Connesso alla ECU");
                     showProgress(false);
-                    btnScan.setEnabled(true);
+                    btnConnect.setEnabled(true);
                     btnDisconnect.setEnabled(true);
-                    setDataButtonsEnabled(true);
+                    // Avvia automaticamente l'aggiornamento continuo
+                    startPolling();
+                    // Crea il record del viaggio alla connessione SOLO se non esiste già (prima connessione)
+                    if (currentTrip == null) {
+                        currentTrip = new TripLog();
+                        tripLogManager.saveTrip(currentTrip);
+                    }
                 });
 
             } catch (EcuConnectionException e) {
                 // BT connesso ma la ECU non risponde
-                isConnected = true; // rimane connesso al BT, i pulsanti dati restano attivi
+                isConnected = true; // rimane connesso al BT
                 mainHandler.post(() -> {
                     showStatus("Connesso a: " + device.getName()
                             + "\nErrore comunicazione ECU: " + e.getMessage()
                             + "\nVerifica protocollo o chiave in posizione ON.");
                     showProgress(false);
-                    btnScan.setEnabled(true);
+                    btnConnect.setEnabled(true);
                     btnDisconnect.setEnabled(true);
-                    setDataButtonsEnabled(true);
                 });
 
             } catch (IOException e) {
@@ -248,7 +302,7 @@ public class MainActivity extends AppCompatActivity {
                     showStatus("Errore connessione BT: " + e.getMessage()
                             + "\nAssicurati che l'ELM327 sia acceso e nel raggio BT.");
                     showProgress(false);
-                    btnScan.setEnabled(true);
+                    btnConnect.setEnabled(true);
                 });
             }
         }).start();
@@ -270,14 +324,13 @@ public class MainActivity extends AppCompatActivity {
         sendCommand("ATAT1", 300);   // Adaptive timing ON
 
         // Determina protocollo in base alla selezione UI
-        int selectedId = rgProtocol.getCheckedRadioButtonId();
         String protoCmd;
         String protoLabel;
 
-        if (selectedId == R.id.rbSP3) {
+        if (selectedProtocol == R.id.rbSP3) {
             protoCmd   = "ATSP3";
             protoLabel = "ISO 9141-2 (SP3)";
-        } else if (selectedId == R.id.rbSP5) {
+        } else if (selectedProtocol == R.id.rbSP5) {
             protoCmd   = "ATSP5";
             protoLabel = "KWP Fast Init (SP5)";
         } else {
@@ -288,14 +341,47 @@ public class MainActivity extends AppCompatActivity {
         sendCommand(protoCmd, 1000);
 
         // Verifica comunicazione con la ECU tramite Mode 01 PID 00 (PID supportati)
-        String ecuTestRaw = sendCommand("0100", 5000);
+        String ecuTestRaw = sendCommand("0100", 3000);
+        boolean containsBusInit = ecuTestRaw.toUpperCase().contains("BUS INIT");
+        boolean containsOk = ecuTestRaw.toUpperCase().contains("OK");
         boolean ecuOk = !ecuTestRaw.isEmpty()
                 && !ecuTestRaw.toUpperCase().contains("NO DATA")
                 && !ecuTestRaw.toUpperCase().contains("UNABLE TO CONNECT")
-                && !ecuTestRaw.toUpperCase().contains("BUS INIT")
                 && !ecuTestRaw.toUpperCase().contains("ERROR")
                 && !ecuTestRaw.contains("?")
-                && ecuTestRaw.toUpperCase().contains("41");
+                //&& ecuTestRaw.toUpperCase().contains("41")
+                && !(containsBusInit && !containsOk); // Se c'è BUS INIT ma non OK, fallisce; se c'è anche OK, è valido
+
+        // Estrazione e salvataggio PID supportati (solo se risposta valida)
+        supportedPids01.clear();
+        if (ecuOk) {
+            // Cerca la parte dopo OK (se presente)
+            String raw = ecuTestRaw.toUpperCase();
+            int okIdx = raw.indexOf("OK");
+            if (okIdx >= 0) {
+                raw = raw.substring(okIdx + 2); // dopo "OK"
+            }
+            // Cerca header 4100
+            int idx = raw.indexOf("4100");
+            if (idx >= 0 && raw.length() >= idx + 12) {
+                String payload = raw.substring(idx + 4, idx + 12); // 8 caratteri esadecimali (4 byte)
+                // Converte in 4 byte
+                try {
+                    int[] bytes = new int[4];
+                    for (int i = 0; i < 4; i++) {
+                        bytes[i] = Integer.parseInt(payload.substring(i * 2, i * 2 + 2), 16);
+                    }
+                    // Ogni bit rappresenta un PID supportato (da 01 a 20)
+                    for (int i = 0; i < 32; i++) {
+                        int byteIdx = i / 8;
+                        int bitIdx = 7 - (i % 8); // bit più significativo a sinistra
+                        if (((bytes[byteIdx] >> bitIdx) & 0x01) == 1) {
+                            supportedPids01.add(i + 1); // PID da 0x01 a 0x20
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
 
         // Leggi VIN (Mode 09 PID 02) — non sempre supportato da tutti i veicoli
         String rawVin = ecuOk ? sendCommand("0902", 1500) : "";
@@ -378,9 +464,11 @@ public class MainActivity extends AppCompatActivity {
 
         final String logLine = ">> " + command + "\n<< " + result + "\n";
         mainHandler.post(() -> {
-            tvLog.append(logLine);
+            // Aggiungi al buffer statico
+            logBuffer.append(logLine);
+
             // Mantieni il buffer entro MAX_LOG_LINES righe
-            String current = tvLog.getText().toString();
+            String current = logBuffer.toString();
             String[] lines = current.split("\n", -1);
             if (lines.length > MAX_LOG_LINES) {
                 int excess = lines.length - MAX_LOG_LINES;
@@ -388,9 +476,8 @@ public class MainActivity extends AppCompatActivity {
                 for (int i = excess; i < lines.length; i++) {
                     trimmed.append(lines[i]).append("\n");
                 }
-                tvLog.setText(trimmed.toString());
+                logBuffer = trimmed;
             }
-            scrollLog.post(() -> scrollLog.fullScroll(NestedScrollView.FOCUS_DOWN));
         });
 
         return result;
@@ -403,51 +490,95 @@ public class MainActivity extends AppCompatActivity {
 
     // ─── LETTURA DATI ────────────────────────────────────────────────────────
 
-    private void readAllDataOnce() {
-        if (!isConnected) return;
-        showProgress(true);
-
-        new Thread(() -> {
-            try {
-                OBDData data = fetchOBDData();
-                mainHandler.post(() -> {
-                    updateUI(data);
-                    showProgress(false);
-                });
-            } catch (IOException e) {
-                mainHandler.post(() -> {
-                    showStatus("Errore lettura: " + e.getMessage());
-                    showProgress(false);
-                });
-            }
-        }).start();
-    }
-
-    private void togglePolling() {
-        if (!isPolling) {
-            startPolling();
-        } else {
-            stopPolling();
-        }
-    }
-
     private void startPolling() {
+        if (isPolling) return; // Già in polling
+
         isPolling = true;
-        btnStartPolling.setText("Stop aggiornamento continuo");
-        btnReadOnce.setEnabled(false);
+
+        // Reset statistiche di viaggio SOLO se è una nuova connessione (non una riconnessione)
+        if (currentTrip == null || totalDistanceKm == 0) {
+            totalDistanceKm = 0.0;
+            totalFuelMafLiters = 0.0;
+            totalFuelSdLiters = 0.0;
+            totalSpeedSum = 0;
+            speedSampleCount = 0;
+        }
+        lastUpdateTimeMs = System.currentTimeMillis();
 
         pollingRunnable = new Runnable() {
             @Override
             public void run() {
-                if (!isPolling || !isConnected) return;
+                if (!isPolling) return;
+
                 new Thread(() -> {
                     try {
                         OBDData data = fetchOBDData();
-                        mainHandler.post(() -> updateUI(data));
+                        consecutiveBTErrors = 0; // Reset errori se la lettura ha successo
+                        consecutiveNoData = 0; // Reset contatore NO DATA
+                        mainHandler.post(() -> {
+                            updateUI(data);
+                            if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
+                        });
+
+                    } catch (EcuNoDataException e) {
+                        // ECU non fornisce dati (motore probabilmente spento)
+                        consecutiveNoData++;
+                        consecutiveBTErrors = 0; // Non è un errore di connessione BT
+
+                        mainHandler.post(() -> {
+                            if (consecutiveNoData >= MAX_NO_DATA_BEFORE_RETRY && shouldStayConnected) {
+                                // Tenta di re-inizializzare l'ECU
+                                showStatus("ECU non risponde. Attendo riavvio motore... (" + consecutiveNoData + ")");
+
+                                // Prova a re-inizializzare l'ELM327/ECU
+                                new Thread(() -> {
+                                    try {
+                                        initElm327();
+                                        consecutiveNoData = 0;
+                                        mainHandler.post(() -> {
+                                            showStatus("ECU rilevata! Ripresa lettura dati.");
+                                        });
+                                    } catch (Exception initError) {
+                                        // Re-init fallita, continua ad aspettare
+                                        mainHandler.post(() -> {
+                                            showStatus("Motore spento. In attesa... (" + consecutiveNoData + ")");
+                                        });
+                                    }
+                                    if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
+                                }).start();
+                            } else {
+                                showStatus("Motore spento? Tentativo " + consecutiveNoData + "/" + MAX_NO_DATA_BEFORE_RETRY);
+                                if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
+                            }
+                        });
+
                     } catch (IOException e) {
-                        mainHandler.post(() -> showStatus("Errore polling: " + e.getMessage()));
+                        // Errore di connessione Bluetooth
+                        consecutiveBTErrors++;
+                        mainHandler.post(() -> {
+                            if (consecutiveBTErrors >= MAX_ERRORS_BEFORE_RECONNECT && shouldStayConnected) {
+                                // Tentativo di riconnessione automatica (BT perso)
+                                showStatus("Connessione BT persa. Riconnessione...");
+                                isConnected = false;
+                                closeStreams();
+
+                                // Riprova a connettersi dopo 2 secondi
+                                mainHandler.postDelayed(() -> {
+                                    if (shouldStayConnected) {
+                                        connectToSavedDevice();
+                                    }
+                                }, 2000);
+                            } else if (consecutiveBTErrors < MAX_ERRORS_BEFORE_RECONNECT) {
+                                // Mostra errore ma continua a provare
+                                showStatus("Errore lettura (" + consecutiveBTErrors + "/" + MAX_ERRORS_BEFORE_RECONNECT + "): " + e.getMessage());
+                                if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
+                            } else {
+                                // Troppi errori e non dobbiamo riconnettere
+                                showStatus("Connessione persa: " + e.getMessage());
+                                stopPolling();
+                            }
+                        });
                     }
-                    if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
                 }).start();
             }
         };
@@ -457,8 +588,6 @@ public class MainActivity extends AppCompatActivity {
     private void stopPolling() {
         isPolling = false;
         if (pollingRunnable != null) mainHandler.removeCallbacks(pollingRunnable);
-        btnStartPolling.setText("Avvia aggiornamento continuo");
-        btnReadOnce.setEnabled(true);
     }
 
     /**
@@ -476,6 +605,14 @@ public class MainActivity extends AppCompatActivity {
         // RPM — PID 0x0C — Formula: ((A*256)+B)/4 → giri/min
         String rpmRaw = sendCommand("010C");
         data.rpm = parseRpm(rpmRaw);
+
+        // Controlla se l'ECU sta rispondendo con dati validi
+        if (rpmRaw.toUpperCase().contains("NO DATA") ||
+            rpmRaw.toUpperCase().contains("UNABLE TO CONNECT") ||
+            rpmRaw.toUpperCase().contains("STOPPED") ||
+            data.rpm < 0) {
+            throw new EcuNoDataException("ECU non fornisce dati (motore spento?)");
+        }
 
         // Velocità — PID 0x0D — Formula: A → km/h (valore diretto)
         String speedRaw = sendCommand("010D");
@@ -498,6 +635,11 @@ public class MainActivity extends AppCompatActivity {
         data.iatCelsius = parseIat(iatRaw);
 
         return data;
+    }
+
+    /** Eccezione per quando l'ECU non fornisce dati (es. motore spento) */
+    static class EcuNoDataException extends IOException {
+        EcuNoDataException(String message) { super(message); }
     }
 
     // ─── PARSER RISPOSTE OBD-II ──────────────────────────────────────────────
@@ -596,29 +738,99 @@ public class MainActivity extends AppCompatActivity {
     // ─── UI HELPERS ──────────────────────────────────────────────────────────
 
     private void updateUI(OBDData data) {
+        // RPM
         tvRpm.setText(data.rpm >= 0
-                ? "RPM: " + data.rpm + " giri/min"
+                ? "RPM: " + data.rpm
                 : "RPM: N/D");
 
+        // Velocità
         tvSpeed.setText(data.speedKmh >= 0
                 ? "Velocita: " + data.speedKmh + " km/h"
                 : "Velocita: N/D");
 
+        // Temperatura
         tvTemp.setText(data.tempCelsius > -40
                 ? "Temp: " + data.tempCelsius + " C"
                 : "Temp: N/D");
 
-        float fuelMaf = calcFuelRateMaf(data.mafGps, data.speedKmh);
-        float fuelSd  = calcFuelRateSpeedDensity(data.rpm, data.speedKmh, data.mapKpa, data.iatCelsius);
+        // Calcola consumi in L/100km
+        float fuelMafL100 = calcFuelRateMaf(data.mafGps, data.speedKmh);
+        float fuelSdL100  = calcFuelRateSpeedDensity(data.rpm, data.speedKmh, data.mapKpa, data.iatCelsius);
 
-        String mafStr = fuelMaf > 0
-                ? String.format(java.util.Locale.US, "%.1f", fuelMaf)
-                : (data.mafGps >= 0 && data.speedKmh == 0 ? "fermo" : "N/D");
-        String sdStr = fuelSd > 0
-                ? String.format(java.util.Locale.US, "%.1f", fuelSd)
-                : (data.speedKmh == 0 ? "fermo" : "N/D");
+        // Converte L/100km in km/L istantanei
+        float kmLMaf = fuelMafL100 > 0 ? 100.0f / fuelMafL100 : -1f;
+        float kmLSd = fuelSdL100 > 0 ? 100.0f / fuelSdL100 : -1f;
 
-        tvFuelRate.setText("Consumo: " + mafStr + " / " + sdStr + " L/100km");
+        // Visualizza km/L istantanei
+        tvFuelRateInstantMaf.setText(kmLMaf > 0
+                ? String.format(java.util.Locale.US, "km/L ist. (MAF): %.2f", kmLMaf)
+                : (data.speedKmh == 0 ? "km/L ist. (MAF): fermo" : "km/L ist. (MAF): N/D"));
+
+        tvFuelRateInstantSd.setText(kmLSd > 0
+                ? String.format(java.util.Locale.US, "km/L ist. (SD): %.2f", kmLSd)
+                : (data.speedKmh == 0 ? "km/L ist. (SD): fermo" : "km/L ist. (SD): N/D"));
+
+        // Calcola statistiche di viaggio
+        long currentTimeMs = System.currentTimeMillis();
+        if (lastUpdateTimeMs > 0 && data.speedKmh > 0) {
+            double elapsedHours = (currentTimeMs - lastUpdateTimeMs) / 3600000.0; // ms to hours
+            double distanceKm = data.speedKmh * elapsedHours;
+            totalDistanceKm += distanceKm;
+
+            // Accumula consumo carburante
+            if (fuelMafL100 > 0) {
+                totalFuelMafLiters += (distanceKm / 100.0) * fuelMafL100;
+            }
+            if (fuelSdL100 > 0) {
+                totalFuelSdLiters += (distanceKm / 100.0) * fuelSdL100;
+            }
+
+            // Accumula velocità per media
+            totalSpeedSum += data.speedKmh;
+            speedSampleCount++;
+        }
+        lastUpdateTimeMs = currentTimeMs;
+
+        // Visualizza km percorsi
+        tvTotalKm.setText(String.format(java.util.Locale.US, "Km percorsi: %.2f", totalDistanceKm));
+
+        // Velocità media
+        if (speedSampleCount > 0) {
+            double avgSpeed = (double) totalSpeedSum / speedSampleCount;
+            tvAvgSpeed.setText(String.format(java.util.Locale.US, "Velocita media: %.1f km/h", avgSpeed));
+        } else {
+            tvAvgSpeed.setText("Velocita media: --");
+        }
+
+        // km/L medi
+        if (totalDistanceKm > 0.01) {
+            if (totalFuelMafLiters > 0) {
+                double avgKmLMaf = totalDistanceKm / totalFuelMafLiters;
+                tvAvgFuelMaf.setText(String.format(java.util.Locale.US, "km/L medio (MAF): %.2f", avgKmLMaf));
+            } else {
+                tvAvgFuelMaf.setText("km/L medio (MAF): --");
+            }
+
+            if (totalFuelSdLiters > 0) {
+                double avgKmLSd = totalDistanceKm / totalFuelSdLiters;
+                tvAvgFuelSd.setText(String.format(java.util.Locale.US, "km/L medio (SD): %.2f", avgKmLSd));
+            } else {
+                tvAvgFuelSd.setText("km/L medio (SD): --");
+            }
+        } else {
+            tvAvgFuelMaf.setText("km/L medio (MAF): --");
+            tvAvgFuelSd.setText("km/L medio (SD): --");
+        }
+
+        // Aggiorna il record del viaggio corrente ad ogni lettura
+        if (currentTrip != null && totalDistanceKm > 0) {
+            double avgSpeed = speedSampleCount > 0 ? (double) totalSpeedSum / speedSampleCount : 0.0;
+            double avgKmLMaf = totalFuelMafLiters > 0 ? totalDistanceKm / totalFuelMafLiters : 0.0;
+            double avgKmLSd = totalFuelSdLiters > 0 ? totalDistanceKm / totalFuelSdLiters : 0.0;
+
+            currentTrip.updateTrip(totalDistanceKm, avgSpeed, avgKmLMaf, avgKmLSd);
+            tripLogManager.updateCurrentTrip(currentTrip);
+        }
     }
 
     private void showStatus(String msg) {
@@ -629,25 +841,39 @@ public class MainActivity extends AppCompatActivity {
         progressBar.setVisibility(show ? View.VISIBLE : View.GONE);
     }
 
-    private void setDataButtonsEnabled(boolean enabled) {
-        btnReadOnce.setEnabled(enabled);
-        btnStartPolling.setEnabled(enabled);
-    }
-
     // ─── DISCONNESSIONE ──────────────────────────────────────────────────────
 
     private void disconnect() {
+        shouldStayConnected = false; // Disabilita riconnessione automatica
         stopPolling();
+
+        // Chiude il record del viaggio alla disconnessione
+        if (currentTrip != null && totalDistanceKm > 0.01) {
+            double avgSpeed = speedSampleCount > 0 ? (double) totalSpeedSum / speedSampleCount : 0.0;
+            double avgKmLMaf = totalFuelMafLiters > 0 ? totalDistanceKm / totalFuelMafLiters : 0.0;
+            double avgKmLSd = totalFuelSdLiters > 0 ? totalDistanceKm / totalFuelSdLiters : 0.0;
+
+            currentTrip.endTrip(totalDistanceKm, avgSpeed, avgKmLMaf, avgKmLSd);
+            tripLogManager.updateCurrentTrip(currentTrip);
+            currentTrip = null;
+        }
+
         isConnected = false;
+        consecutiveBTErrors = 0;
+        consecutiveNoData = 0;
         closeStreams();
 
         showStatus("Disconnesso.");
         btnDisconnect.setEnabled(false);
-        setDataButtonsEnabled(false);
         tvRpm.setText("RPM: --");
         tvSpeed.setText("Velocita: --");
         tvTemp.setText("Temp: --");
-        tvFuelRate.setText("Consumo: --");
+        tvFuelRateInstantMaf.setText("km/L ist. (MAF): --");
+        tvFuelRateInstantSd.setText("km/L ist. (SD): --");
+        tvTotalKm.setText("Km percorsi: --");
+        tvAvgSpeed.setText("Velocita media: --");
+        tvAvgFuelMaf.setText("km/L medio (MAF): --");
+        tvAvgFuelSd.setText("km/L medio (SD): --");
         tvProtocol.setText("Protocollo: --");
         tvElmVersion.setText("ELM327: --");
         tvVin.setText("VIN: --");
@@ -674,5 +900,19 @@ public class MainActivity extends AppCompatActivity {
         float mafGps = -1f;   // g/s, -1 = non disponibile
         int mapKpa = -1;      // kPa, -1 = non disponibile
         int iatCelsius = -100; // °C, -100 = non disponibile
+    }
+
+    // ─── METODI STATICI PER CONDIVISIONE DATI CON SETTINGSACTIVITY ──────────
+
+    public static String getLog() {
+        return logBuffer.toString();
+    }
+
+    public static int getSelectedProtocol() {
+        return selectedProtocol;
+    }
+
+    public static void setSelectedProtocol(int protocol) {
+        selectedProtocol = protocol;
     }
 }

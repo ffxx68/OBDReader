@@ -15,15 +15,32 @@
         android:orientation="vertical"
         android:padding="12dp">
 
-        <TextView
+        <!-- Barra titolo con pulsante impostazioni -->
+        <RelativeLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center"
-            android:paddingBottom="2dp"
-            android:text="OBD-II Reader"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:textColor="@android:color/white" />
+            android:paddingBottom="2dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerInParent="true"
+                android:text="OBD-II Reader"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/white" />
+
+            <ImageButton
+                android:id="@+id/btnSettings"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Impostazioni"
+                android:padding="8dp"
+                android:src="@drawable/ic_settings" />
+        </RelativeLayout>
 
         <TextView
             android:id="@+id/tvProtocol"
@@ -72,49 +89,6 @@
             android:layout_marginBottom="6dp"
             android:visibility="gone" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Protocollo forzato:"
-            android:textSize="14sp"
-            android:textColor="@android:color/white"
-            android:paddingBottom="2dp" />
-
-        <RadioGroup
-            android:id="@+id/rgProtocol"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="10dp"
-            android:orientation="vertical">
-
-            <RadioButton
-                android:id="@+id/rbAuto"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Auto (ATSP0)"
-                android:textSize="14sp"
-                android:textColor="@android:color/white"
-                android:checked="true" />
-
-            <RadioButton
-                android:id="@+id/rbSP3"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="ISO 9141-2 — ATSP3 (Audi/VW)"
-                android:textSize="14sp"
-                android:textColor="@android:color/white"
-                android:checked="false" />
-
-            <RadioButton
-                android:id="@+id/rbSP5"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="KWP Fast Init — ATSP5"
-                android:textSize="14sp"
-                android:textColor="@android:color/white"
-                android:checked="false" />
-
-        </RadioGroup>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -123,12 +97,12 @@
             android:orientation="horizontal">
 
             <Button
-                android:id="@+id/btnScan"
+                android:id="@+id/btnConnect"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="4dp"
                 android:layout_weight="1"
-                android:text="Cerca dispositivi"
+                android:text="Connetti"
                 android:textAllCaps="false"
                 android:textSize="16sp"
                 android:minHeight="44dp"
@@ -149,115 +123,113 @@
                 android:paddingBottom="8dp" />
         </LinearLayout>
 
-        <LinearLayout
+        <!-- Letture principali -->
+        <TextView
+            android:id="@+id/tvRpm"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="6dp"
-            android:orientation="horizontal">
+            android:layout_marginBottom="8dp"
+            android:text="RPM: --"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:textColor="@android:color/white" />
 
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/tvRpm"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="RPM: --"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="@android:color/white" />
-
-                <TextView
-                    android:id="@+id/tvSpeed"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Velocita: --"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="@android:color/white" />
-
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/tvTemp"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Temp: --"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:gravity="start"
-                    android:textColor="@android:color/white" />
-
-                <TextView
-                    android:id="@+id/tvFuelRate"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Consumo: --"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:gravity="start"
-                    android:textColor="@android:color/white" />
-
-            </LinearLayout>
-
-        </LinearLayout>
-
-
-        <Button
-            android:id="@+id/btnReadOnce"
+        <TextView
+            android:id="@+id/tvSpeed"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="6dp"
-            android:text="Leggi tutti i dati"
-            android:textAllCaps="false"
-            android:textSize="16sp"
-            android:minHeight="44dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp" />
+            android:layout_marginBottom="8dp"
+            android:text="Velocita: --"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:textColor="@android:color/white" />
 
-        <Button
-            android:id="@+id/btnStartPolling"
+        <TextView
+            android:id="@+id/tvTemp"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="6dp"
-            android:text="Avvia aggiornamento continuo"
-            android:textAllCaps="false"
-            android:textSize="16sp"
-            android:minHeight="44dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp" />
+            android:layout_marginBottom="8dp"
+            android:text="Temp: --"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:textColor="@android:color/white" />
+
+        <!-- Consumi istantanei -->
+        <TextView
+            android:id="@+id/tvFuelRateInstantMaf"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="km/L ist. (MAF): --"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:textColor="@android:color/white" />
+
+        <TextView
+            android:id="@+id/tvFuelRateInstantSd"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="km/L ist. (SD): --"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:textColor="@android:color/white" />
+
+        <!-- Statistiche di viaggio -->
+        <TextView
+            android:id="@+id/tvTotalKm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="8dp"
+            android:text="Km percorsi: --"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:textColor="#4CAF50" />
+
+        <TextView
+            android:id="@+id/tvAvgSpeed"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="Velocita media: --"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:textColor="#4CAF50" />
+
+        <TextView
+            android:id="@+id/tvAvgFuelMaf"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="km/L medio (MAF): --"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:textColor="#4CAF50" />
+
+        <TextView
+            android:id="@+id/tvAvgFuelSd"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="km/L medio (SD): --"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:textColor="#4CAF50" />
+
 
 
     </LinearLayout>
 </ScrollView>
 
-    <androidx.core.widget.NestedScrollView
-        android:id="@+id/scrollLog"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:layout_margin="6dp"
-        android:background="#1A237E"
-        android:padding="6dp"
-        android:fillViewport="true">
-
-        <TextView
-            android:id="@+id/tvLog"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:lineSpacingExtra="2dp"
-            android:textColor="#B0BEC5"
-            android:textSize="13sp" />
-    </androidx.core.widget.NestedScrollView>
 
 </LinearLayout>

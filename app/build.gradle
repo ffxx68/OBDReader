@@ -27,7 +27,7 @@ android {
         minSdk 23          // Android 6.0 — supporto BT classico e permessi runtime
         targetSdk 36
         versionCode currentVersionCode
-        versionName "1.1"
+        versionName "1.2"
     }
 
     signingConfigs {
@@ -55,6 +55,7 @@ android {
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
+    implementation 'com.google.code.gson:gson:2.10.1'
 }
 
 // Auto-incrementa versionCode in version.properties dopo ogni bundleRelease riuscita

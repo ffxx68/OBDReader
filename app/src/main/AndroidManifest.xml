@@ -35,6 +35,16 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name="com.ffxx68.obdreader.SettingsActivity"
+            android:exported="false"
+            android:parentActivityName="com.ffxx68.obdreader.MainActivity" />
+
+        <activity
+            android:name="com.ffxx68.obdreader.TripHistoryActivity"
+            android:exported="false"
+            android:parentActivityName="com.ffxx68.obdreader.SettingsActivity" />
+
     </application>
 
 </manifest>
