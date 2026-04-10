@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat;
 import androidx.core.widget.NestedScrollView;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -31,11 +32,12 @@ public class SettingsActivity extends AppCompatActivity {
     private static final String PREF_PROTOCOL = "selectedProtocol";
 
     private RadioGroup rgProtocol;
-    private TextView tvLog;
-    private NestedScrollView scrollLog;
+    private TextView tvSupportedPids;
+    private NestedScrollView scrollPids;
     private TextView tvSelectedDevice;
     private Button btnScanDevices;
     private Button btnTripHistory;
+    private Button btnCommLog;
     private BluetoothAdapter bluetoothAdapter;
     private final List<BluetoothDevice> pairedDevices = new ArrayList<>();
 
@@ -44,7 +46,7 @@ public class SettingsActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings);
 
-        // Abilita la freccia indietro nella action bar
+        // Enable back arrow in the action bar
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         }
@@ -58,50 +60,53 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void initViews() {
         rgProtocol = findViewById(R.id.rgProtocol);
-        tvLog = findViewById(R.id.tvLog);
-        scrollLog = findViewById(R.id.scrollLog);
+        tvSupportedPids = findViewById(R.id.tvSupportedPids);
+        scrollPids = findViewById(R.id.scrollPids);
         tvSelectedDevice = findViewById(R.id.tvSelectedDevice);
         btnScanDevices = findViewById(R.id.btnScanDevices);
         btnTripHistory = findViewById(R.id.btnTripHistory);
+        btnCommLog = findViewById(R.id.btnCommLog);
 
-        // Ascolta i cambiamenti del protocollo
+        // Listen for protocol changes
         rgProtocol.setOnCheckedChangeListener((group, checkedId) -> saveProtocolSelection(checkedId));
 
-        // Pulsante scansione dispositivi
+        // Scan devices button
         btnScanDevices.setOnClickListener(v -> checkPermissionsAndScan());
 
-        // Pulsante storico viaggi
+        // Trip history button
         btnTripHistory.setOnClickListener(v -> {
             Intent intent = new Intent(SettingsActivity.this, TripHistoryActivity.class);
             startActivity(intent);
         });
 
-        // Carica il log attuale da MainActivity
-        String currentLog = MainActivity.getLog();
-        if (!currentLog.isEmpty()) {
-            tvLog.setText(currentLog);
-            scrollLog.post(() -> scrollLog.fullScroll(NestedScrollView.FOCUS_DOWN));
-        }
+        // Communication log button
+        btnCommLog.setOnClickListener(v -> {
+            Intent intent = new Intent(SettingsActivity.this, CommunicationLogActivity.class);
+            startActivity(intent);
+        });
+
+        // Load PIDs supported by the ECU
+        loadSupportedPids();
     }
 
     private void loadSettings() {
-        // Carica il protocollo selezionato dalle SharedPreferences
+        // Load selected protocol from SharedPreferences
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         int savedProtocol = prefs.getInt(PREF_PROTOCOL, R.id.rbAuto);
         rgProtocol.check(savedProtocol);
 
-        // Aggiorna anche la variabile statica in MainActivity
+        // Also update the static variable in MainActivity
         MainActivity.setSelectedProtocol(savedProtocol);
     }
 
     private void saveProtocolSelection(int checkedId) {
-        // Salva nelle SharedPreferences
+        // Save to SharedPreferences
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
         editor.putInt(PREF_PROTOCOL, checkedId);
         editor.apply();
 
-        // Aggiorna anche la variabile statica in MainActivity
+        // Also update the static variable in MainActivity
         MainActivity.setSelectedProtocol(checkedId);
     }
 
@@ -114,12 +119,35 @@ public class SettingsActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Aggiorna il log quando l'activity torna in primo piano
-        String currentLog = MainActivity.getLog();
-        if (!currentLog.isEmpty()) {
-            tvLog.setText(currentLog);
-            scrollLog.post(() -> scrollLog.fullScroll(NestedScrollView.FOCUS_DOWN));
+        // Update supported PIDs when activity comes to foreground
+        loadSupportedPids();
+    }
+
+    private void loadSupportedPids() {
+        Set<Integer> supportedPids = MainActivity.getSupportedPids();
+
+        if (supportedPids.isEmpty()) {
+            tvSupportedPids.setText("Connect to the ECU to see supported PIDs.");
+            return;
         }
+
+        // Sort PIDs for display
+        List<Integer> sortedPids = new ArrayList<>(supportedPids);
+        Collections.sort(sortedPids);
+
+        StringBuilder pidList = new StringBuilder();
+        pidList.append("PIDs supported by ECU (").append(supportedPids.size()).append("):\n\n");
+
+        for (int pid : sortedPids) {
+            String description = MainActivity.getPidDescription(pid);
+            if (description != null) {
+                pidList.append(String.format("0x%02X - %s\n", pid, description));
+            } else {
+                pidList.append(String.format("0x%02X - (unknown)\n", pid));
+            }
+        }
+
+        tvSupportedPids.setText(pidList.toString());
     }
 
     private void loadSelectedDevice() {
@@ -130,7 +158,7 @@ public class SettingsActivity extends AppCompatActivity {
         if (deviceName != null && deviceAddress != null) {
             tvSelectedDevice.setText(deviceName + "\n" + deviceAddress);
         } else {
-            tvSelectedDevice.setText("Nessun dispositivo selezionato");
+            tvSelectedDevice.setText("No device selected");
         }
     }
 
@@ -190,8 +218,8 @@ public class SettingsActivity extends AppCompatActivity {
                 scanAndShowDevices();
             } else {
                 new AlertDialog.Builder(this)
-                        .setTitle("Permessi richiesti")
-                        .setMessage("I permessi Bluetooth sono necessari per cercare dispositivi.")
+                        .setTitle("Permissions required")
+                        .setMessage("Bluetooth permissions are required to search for devices.")
                         .setPositiveButton("OK", null)
                         .show();
             }
@@ -201,8 +229,8 @@ public class SettingsActivity extends AppCompatActivity {
     private void scanAndShowDevices() {
         if (bluetoothAdapter == null) {
             new AlertDialog.Builder(this)
-                    .setTitle("Bluetooth non disponibile")
-                    .setMessage("Questo dispositivo non supporta il Bluetooth.")
+                    .setTitle("Bluetooth not available")
+                    .setMessage("This device does not support Bluetooth.")
                     .setPositiveButton("OK", null)
                     .show();
             return;
@@ -210,8 +238,8 @@ public class SettingsActivity extends AppCompatActivity {
 
         if (!bluetoothAdapter.isEnabled()) {
             new AlertDialog.Builder(this)
-                    .setTitle("Bluetooth disattivato")
-                    .setMessage("Attiva il Bluetooth nelle impostazioni del dispositivo.")
+                    .setTitle("Bluetooth disabled")
+                    .setMessage("Enable Bluetooth in device settings.")
                     .setPositiveButton("OK", null)
                     .show();
             return;
@@ -223,29 +251,28 @@ public class SettingsActivity extends AppCompatActivity {
 
         for (BluetoothDevice d : bonded) {
             pairedDevices.add(d);
-            String name = d.getName() != null ? d.getName() : "Sconosciuto";
+            String name = d.getName() != null ? d.getName() : "Unknown";
             names.add(name + "\n" + d.getAddress());
         }
 
         if (pairedDevices.isEmpty()) {
             new AlertDialog.Builder(this)
-                    .setTitle("Nessun dispositivo")
-                    .setMessage("Nessun dispositivo Bluetooth accoppiato.\n\n"
-                            + "Vai in Impostazioni → Bluetooth e accoppia l'ELM327 (PIN: 1234 o 6789)")
+                    .setTitle("No devices")
+                    .setMessage("No paired Bluetooth devices.\n\n"
+                            + "Go to Settings → Bluetooth and pair the ELM327 (PIN: 1234 or 6789)")
                     .setPositiveButton("OK", null)
                     .show();
             return;
         }
 
         new AlertDialog.Builder(this)
-                .setTitle("Seleziona dispositivo ELM327")
+                .setTitle("Select ELM327 device")
                 .setItems(names.toArray(new String[0]), (dialog, which) -> {
                     BluetoothDevice selected = pairedDevices.get(which);
-                    String name = selected.getName() != null ? selected.getName() : "Sconosciuto";
+                    String name = selected.getName() != null ? selected.getName() : "Unknown";
                     saveSelectedDevice(name, selected.getAddress());
                 })
-                .setNegativeButton("Annulla", null)
+                .setNegativeButton("Cancel", null)
                 .show();
     }
 }
-

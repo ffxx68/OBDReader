@@ -43,32 +43,12 @@
         </RelativeLayout>
 
         <TextView
-            android:id="@+id/tvProtocol"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:paddingBottom="4dp"
-            android:text="Protocollo: --"
-            android:textSize="16sp"
-            android:textColor="@android:color/white" />
-
-        <TextView
             android:id="@+id/tvElmVersion"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center"
-            android:paddingBottom="2dp"
-            android:text="ELM327: --"
-            android:textSize="13sp"
-            android:textColor="#B0BEC5" />
-
-        <TextView
-            android:id="@+id/tvVin"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center"
             android:paddingBottom="12dp"
-            android:text="VIN: --"
+            android:text="ELM327: -- | Protocollo: --"
             android:textSize="13sp"
             android:textColor="#B0BEC5" />
 
@@ -102,12 +82,12 @@
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="4dp"
                 android:layout_weight="1"
-                android:text="Connetti"
-                android:textAllCaps="false"
-                android:textSize="16sp"
                 android:minHeight="44dp"
                 android:paddingTop="8dp"
-                android:paddingBottom="8dp" />
+                android:paddingBottom="8dp"
+                android:text="Connetti"
+                android:textAllCaps="false"
+                android:textSize="20sp" />
 
             <Button
                 android:id="@+id/btnDisconnect"
@@ -115,12 +95,12 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_weight="1"
-                android:text="Disconnetti"
-                android:textAllCaps="false"
-                android:textSize="16sp"
                 android:minHeight="44dp"
                 android:paddingTop="8dp"
-                android:paddingBottom="8dp" />
+                android:paddingBottom="8dp"
+                android:text="Disconnetti"
+                android:textAllCaps="false"
+                android:textSize="20sp" />
         </LinearLayout>
 
         <!-- Letture principali -->
@@ -134,23 +114,23 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="RPM:"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="end"
                 android:paddingEnd="12dp"
-                android:textColor="@android:color/white" />
+                android:text="Motore:"
+                android:textColor="@android:color/white"
+                android:textSize="20sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvRpm"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="--"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="start"
-                android:textColor="@android:color/white" />
+                android:text="--"
+                android:textColor="@android:color/white"
+                android:textSize="34sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <LinearLayout
@@ -175,11 +155,11 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="--"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="start"
-                android:textColor="@android:color/white" />
+                android:text="--"
+                android:textColor="@android:color/white"
+                android:textSize="34sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <LinearLayout
@@ -192,23 +172,23 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Temp:"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="end"
                 android:paddingEnd="12dp"
-                android:textColor="@android:color/white" />
+                android:text="Temp. liq. raffr.:"
+                android:textColor="@android:color/white"
+                android:textSize="20sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvTemp"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="--"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="start"
-                android:textColor="@android:color/white" />
+                android:text="--"
+                android:textColor="@android:color/white"
+                android:textSize="34sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <!-- Consumi istantanei -->
@@ -222,25 +202,27 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="km/L ist. (MAF):"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="end"
                 android:paddingEnd="12dp"
-                android:textColor="@android:color/white" />
+                android:text="km/L ist.:"
+                android:textColor="@android:color/white"
+                android:textSize="20sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvFuelRateInstantMaf"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="--"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="start"
-                android:textColor="@android:color/white" />
+                android:text="--"
+                android:textColor="@android:color/white"
+                android:textSize="34sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
+
+        <!-- Portata carburante in L/s -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -251,24 +233,25 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="km/L ist. (SD):"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="end"
                 android:paddingEnd="12dp"
-                android:textColor="@android:color/white" />
+                android:text="L/h ist.:"
+                android:textColor="#FFB74D"
+                android:textSize="18sp"
+                android:textStyle="bold" />
 
             <TextView
-                android:id="@+id/tvFuelRateInstantSd"
+                android:id="@+id/tvFuelFlowMaf"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="--"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="start"
-                android:textColor="@android:color/white" />
+                android:text="--"
+                android:textColor="#FFB74D"
+                android:textSize="28sp"
+                android:textStyle="bold" />
         </LinearLayout>
+
 
         <!-- Statistiche di viaggio -->
         <LinearLayout
@@ -282,23 +265,23 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Km percorsi:"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="end"
                 android:paddingEnd="12dp"
-                android:textColor="#4CAF50" />
+                android:text="Km percorsi:"
+                android:textColor="#83B185"
+                android:textSize="20sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvTotalKm"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="--"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="start"
-                android:textColor="#4CAF50" />
+                android:text="--"
+                android:textColor="#83B185"
+                android:textSize="34sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <LinearLayout
@@ -311,23 +294,23 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Velocità media:"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="end"
                 android:paddingEnd="12dp"
-                android:textColor="#4CAF50" />
+                android:text="Velocità media:"
+                android:textColor="#83B185"
+                android:textSize="20sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvAvgSpeed"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="--"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="start"
-                android:textColor="#4CAF50" />
+                android:text="--"
+                android:textColor="#83B185"
+                android:textSize="34sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <LinearLayout
@@ -340,52 +323,23 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="km/L medio (MAF):"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="end"
                 android:paddingEnd="12dp"
-                android:textColor="#4CAF50" />
+                android:text="km/L medio:"
+                android:textColor="#83B185"
+                android:textSize="20sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvAvgFuelMaf"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="--"
-                android:textSize="20sp"
-                android:textStyle="bold"
                 android:gravity="start"
-                android:textColor="#4CAF50" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:orientation="horizontal">
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="km/L medio (SD):"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:gravity="end"
-                android:paddingEnd="12dp"
-                android:textColor="#4CAF50" />
-
-            <TextView
-                android:id="@+id/tvAvgFuelSd"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:text="--"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:gravity="start"
-                android:textColor="#4CAF50" />
+                android:textColor="#83B185"
+                android:textSize="34sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
 

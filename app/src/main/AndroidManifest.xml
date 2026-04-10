@@ -45,6 +45,11 @@
             android:exported="false"
             android:parentActivityName="com.ffxx68.obdreader.SettingsActivity" />
 
+        <activity
+            android:name="com.ffxx68.obdreader.CommunicationLogActivity"
+            android:exported="false"
+            android:parentActivityName="com.ffxx68.obdreader.SettingsActivity" />
+
     </application>
 
 </manifest>

@@ -56,7 +56,7 @@ public class TripHistoryActivity extends AppCompatActivity {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
         container.setPadding(24, 16, 24, 16);
-        container.setBackgroundResource(android.R.drawable.dialog_holo_light_frame);
+        container.setBackgroundResource(R.drawable.trip_item_background);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -65,68 +65,62 @@ public class TripHistoryActivity extends AppCompatActivity {
         params.setMargins(0, 0, 0, 16);
         container.setLayoutParams(params);
 
-        // Inizio viaggio
+        // Trip start
         TextView tvStart = new TextView(this);
-        tvStart.setText("Inizio: " + trip.getStartTimeFormatted());
+        tvStart.setText("Start: " + trip.getStartTimeFormatted());
         tvStart.setTextSize(16);
         tvStart.setTextColor(0xFFFFFFFF);
         tvStart.setTypeface(null, android.graphics.Typeface.BOLD);
         container.addView(tvStart);
 
-        // Fine viaggio
+        // Trip end
         TextView tvEnd = new TextView(this);
-        tvEnd.setText("Fine: " + trip.getEndTimeFormatted());
+        tvEnd.setText("End: " + trip.getEndTimeFormatted());
         tvEnd.setTextSize(14);
-        tvEnd.setTextColor(0xFFB0BEC5);
+        tvEnd.setTextColor(0xFFD0D0D0);
         tvEnd.setPadding(0, 4, 0, 8);
         container.addView(tvEnd);
 
-        // Durata
+        // Duration
         TextView tvDuration = new TextView(this);
-        tvDuration.setText("Durata: " + trip.getDuration());
+        tvDuration.setText("Duration: " + trip.getDuration());
         tvDuration.setTextSize(14);
-        tvDuration.setTextColor(0xFF4CAF50);
+        tvDuration.setTextColor(0xFF81C784);
         container.addView(tvDuration);
 
-        // Km percorsi
+        // Distance traveled
         TextView tvKm = new TextView(this);
-        tvKm.setText(String.format(Locale.US, "Km percorsi: %.2f km", trip.getTotalKm()));
+        tvKm.setText(String.format(Locale.US, "Distance: %.2f km", trip.getTotalKm()));
         tvKm.setTextSize(16);
         tvKm.setTextColor(0xFFFFFFFF);
         tvKm.setPadding(0, 8, 0, 0);
         container.addView(tvKm);
 
-        // Velocità media
+        // Average speed
         TextView tvSpeed = new TextView(this);
-        tvSpeed.setText(String.format(Locale.US, "Velocità media: %.1f km/h", trip.getAvgSpeedKmh()));
+        tvSpeed.setText(String.format(Locale.US, "Average speed: %.1f km/h", trip.getAvgSpeedKmh()));
         tvSpeed.setTextSize(14);
-        tvSpeed.setTextColor(0xFFB0BEC5);
+        tvSpeed.setTextColor(0xFFD0D0D0);
         container.addView(tvSpeed);
 
-        // km/L medio MAF
+        // Average km/L MAF
         TextView tvKmLMaf = new TextView(this);
-        tvKmLMaf.setText(String.format(Locale.US, "km/L medio (MAF): %.2f", trip.getAvgKmLMaf()));
+        tvKmLMaf.setText(String.format(Locale.US, "Avg km/L (MAF): %.2f", trip.getAvgKmLMaf()));
         tvKmLMaf.setTextSize(14);
-        tvKmLMaf.setTextColor(0xFF4CAF50);
+        tvKmLMaf.setTextColor(0xFF81C784);
         container.addView(tvKmLMaf);
 
-        // km/L medio SD
-        TextView tvKmLSd = new TextView(this);
-        tvKmLSd.setText(String.format(Locale.US, "km/L medio (SD): %.2f", trip.getAvgKmLSd()));
-        tvKmLSd.setTextSize(14);
-        tvKmLSd.setTextColor(0xFF4CAF50);
-        container.addView(tvKmLSd);
 
-        // Click per eliminare
+        // Long click to delete
         container.setOnLongClickListener(v -> {
             new AlertDialog.Builder(this)
-                .setTitle("Elimina viaggio")
-                .setMessage("Vuoi eliminare questo viaggio?")
-                .setPositiveButton("Elimina", (dialog, which) -> {
+                .setTitle("Delete trip")
+                .setMessage("Do you want to delete this trip?")
+                .setPositiveButton("Delete", (dialog, which) -> {
                     tripLogManager.deleteTrip(position);
                     loadTrips();
                 })
-                .setNegativeButton("Annulla", null)
+                .setNegativeButton("Cancel", null)
                 .show();
             return true;
         });
@@ -140,4 +134,3 @@ public class TripHistoryActivity extends AppCompatActivity {
         return true;
     }
 }
-
