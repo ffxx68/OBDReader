@@ -222,7 +222,7 @@
         </LinearLayout>
 
 
-        <!-- Portata carburante in L/s -->
+        <!-- Portata carburante in L/h -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

@@ -29,7 +29,7 @@ public class MainActivity extends AppCompatActivity {
     // Standard UUID for Serial Port Profile (SPP) - used by ELM327
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private static final int PERMISSION_REQUEST_CODE = 100;
-    private static final int READ_INTERVAL_MS = 2000; // polling every 2 seconds
+    private static final int READ_INTERVAL_MS = 1000; // polling interval
     private static final int MAX_LOG_LINES = 200;     // ~100 command/response exchanges
     private static final String PREFS_NAME = "OBDReaderPrefs";
     private static final String PREF_DEVICE_NAME = "selectedDeviceName";
@@ -568,7 +568,7 @@ public class MainActivity extends AppCompatActivity {
 
         for (int queryPid : queryPids) {
             String command = String.format("01%02X", queryPid);
-            String response = sendCommand(command, 3000);
+            String response = sendCommand(command, 500);
 
             // Check if response is valid
             if (!isValidEcuResponse(response)) {
@@ -792,7 +792,7 @@ public class MainActivity extends AppCompatActivity {
 
     // Overload without custom sleep
     private String sendCommand(String command) throws IOException {
-        return sendCommand(command, 300);
+        return sendCommand(command, 100);
     }
 
     // ─── DATA READING ────────────────────────────────────────────────────
@@ -817,10 +817,12 @@ public class MainActivity extends AppCompatActivity {
                 new Thread(() -> {
                     try {
                         OBDData data = fetchOBDData();
-                        consecutiveBTErrors = 0; // Reset errors if reading succeeds
-                        consecutiveNoData = 0; // Reset NO DATA counter
+                        CalculatedData calc = calculateDerivedData(data);
+                        updateCurrentTrip(calc);
+                        consecutiveBTErrors = 0;
+                        consecutiveNoData = 0;
                         mainHandler.post(() -> {
-                            updateUI(data);
+                            updateUI(data, calc);
                             if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
                         });
 
@@ -913,6 +915,8 @@ public class MainActivity extends AppCompatActivity {
     private void stopPolling() {
         isPolling = false;
         if (pollingRunnable != null) mainHandler.removeCallbacks(pollingRunnable);
+        // Aggiorna viaggio se necessario
+        updateCurrentTrip(null);
     }
 
     /**
@@ -1058,13 +1062,14 @@ public class MainActivity extends AppCompatActivity {
     /**
      * Calculates the effective base AFR (Air-Fuel Ratio) for diesel engines based on load.
      *
-     * BASE VERSION - Calculation based on engine load only
+     * CORRECTED: Diesel engines vary AFR inversely with load:
+     * - Low load/Idle (0-20%): AFR ≈ 15:1 - 18:1 (stoichiometric, richer)
+     * - Medium load (20-60%): AFR ≈ 18:1 - 25:1
+     * - High load (60-100%): AFR ≈ 25:1 - 35:1 (lean, excess air for power)
      *
-     * Diesel engines vary AFR based on load:
-     * - Low load (0-30%): AFR ≈ 30:1 - 35:1 (maximum excess air)
-     * - Medium load (30-60%): AFR ≈ 22:1 - 30:1
-     * - High load (60-85%): AFR ≈ 18:1 - 22:1
-     * - Maximum load (85-100%): AFR ≈ 14.5:1 - 18:1 (approaching stoichiometric)
+     * This is the OPPOSITE of what was implemented before. At idle with little air flow,
+     * the engine injects relatively MORE fuel (lower AFR ratio). As load increases,
+     * the engine operates leaner (higher AFR) for efficiency.
      *
      * @param engineLoad Engine load in % (0-100), -1 if not available
      * @return Effective base AFR to use in calculations
@@ -1072,33 +1077,32 @@ public class MainActivity extends AppCompatActivity {
     private float calculateBaseAFR(int engineLoad) {
         // If load not available, use average value for normal driving
         if (engineLoad < 0) {
-            return 27.0f; // Safe average value
+            return 22.0f; // Safe average value
         }
 
         // Limit load to 0-100 range
         int load = Math.max(0, Math.min(100, engineLoad));
 
-        // Linear interpolation for AFR based on load
-        // Maximum AFR (minimum load) = 32.0
-        // Minimum AFR (maximum load) = 15.0
-        // Formula: AFR = 32.0 - (load * (32.0 - 15.0) / 100)
-        float afrMax = 32.0f;
-        float afrMin = 15.0f;
+        // Linear interpolation for AFR based on load - INVERTED
+        // Minimum AFR (minimum load/idle) = 15.0:1 (stoichiometric, richer)
+        // Maximum AFR (maximum load) = 35.0:1 (lean)
+        // Formula: AFR = 15.0 + (load * (35.0 - 15.0) / 100)
+        float afrMin = 15.0f;  // At idle (load=0)
+        float afrMax = 35.0f;  // At full load (load=100)
 
-        return afrMax - (load * (afrMax - afrMin) / 100.0f);
+        return afrMin + (load * (afrMax - afrMin) / 100.0f);
     }
 
     /**
      * Calculates AFR (Air-Fuel Ratio) with 2D table (Load × RPM).
      *
-     * Implements AFR correction based on RPM:
-     * - Low RPM (<2000): Higher AFR (+5%) - better combustion at low speed
-     * - Medium RPM (2000-3500): Standard AFR - optimal regime
-     * - High RPM (>3500): Lower AFR (-5%) - higher specific power
+     * CORRECTED: Diesel engines require LOWER AFR (richer mixture) at idle/low load
+     * because the combustion needs more fuel relative to the small amount of air.
      *
-     * This reflects actual diesel engine behavior:
-     * - At low RPM: slower combustion, more time to mix air-fuel
-     * - At high RPM: faster combustion, need for richer mixture
+     * Actual AFR behavior in diesel:
+     * - Idle/Low load (0-20%): AFR ≈ 15:1 - 18:1 (stoichiometric range)
+     * - Medium load (20-60%): AFR ≈ 18:1 - 25:1
+     * - High load (60-100%): AFR ≈ 25:1 - 35:1 (lean, more excess air)
      *
      * @param engineLoad Engine load in % (0-100), -1 if not available
      * @param rpm Engine RPM, -1 if not available
@@ -1114,16 +1118,15 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // Correction factor based on RPM
-        // Interpolated load vs RPM table
-        // Higher AFR at low RPM (more efficient combustion)
-        // Lower AFR at high RPM (more power)
+        // Lower AFR at low RPM (richer mixture for combustion efficiency)
+        // Higher AFR at high RPM (leaner mixture for efficiency)
         float rpmFactor;
         if (rpm < 2000) {
-            // Low RPM: +5% AFR (more air, cleaner combustion)
-            rpmFactor = 1.05f;
-        } else if (rpm > 3500) {
-            // High RPM: -5% AFR (less air, more power)
+            // Low RPM: -5% AFR (richer mixture for combustion)
             rpmFactor = 0.95f;
+        } else if (rpm > 3500) {
+            // High RPM: +5% AFR (leaner mixture for efficiency)
+            rpmFactor = 1.05f;
         } else {
             // Medium RPM: standard AFR
             rpmFactor = 1.0f;
@@ -1153,33 +1156,12 @@ public class MainActivity extends AppCompatActivity {
         // Base AFR from load and RPM
         float afr = calculateDieselAFR(engineLoad, rpm);
 
-        // Air temperature correction (density)
-        // Air density varies inversely with temperature
-        // ρ(T) = ρ₀ × (T₀ / T) where T in Kelvin
-        if (iatCelsius > -40) {
-            float tempK = iatCelsius + 273.15f;
-            float refTempK = 293.15f; // 20°C as reference
-            float densityFactor = refTempK / tempK;
-            afr *= densityFactor;
-        }
-
-        // Pressure correction (turbo boost + altitude)
-        // Use normalized MAP relative to BARO if both available
-        if (mapKpa > 0 && baroKpa > 0) {
-            // MAP/BARO ratio indicates boost or vacuum
-            // >1.0 = active turbo boost
-            // <1.0 = vacuum (closed throttle or altitude)
-            float pressureRatio = (float) mapKpa / baroKpa;
-            afr *= pressureRatio;
-        } else if (mapKpa > 0) {
-            // Only MAP available: normalize vs standard pressure
-            float pressureFactor = mapKpa / 101.325f;
-            afr *= pressureFactor;
-        } else if (baroKpa > 0) {
-            // Only BARO available: correct for altitude
-            float altitudeFactor = baroKpa / 101.325f;
-            afr *= altitudeFactor;
-        }
+        // NOTE: Temperature and pressure corrections were REMOVED
+        // Reason: MAF sensor already compensates for air density (temperature, altitude).
+        // Multiplying AFR by pressure/temperature factors was WRONG because:
+        // 1. AFR is a mass ratio (fuel mass / air mass), independent of pressure/temperature
+        // 2. Changes in air density are already reflected in MAF reading
+        // 3. Applying both corrections = double-counting the effect
 
         // Throttle Position correction (optional but useful for validation)
         // In a diesel, low throttle with high load indicates acceleration/boost
@@ -1254,7 +1236,7 @@ public class MainActivity extends AppCompatActivity {
 
     // ─── UI HELPERS ──────────────────────────────────────────────────────
 
-    private void updateUI(OBDData data) {
+    private void updateUI(OBDData data, CalculatedData calc) {
         // RPM
         tvRpm.setText(data.rpm >= 0
                 ? data.rpm + " rpm"
@@ -1270,67 +1252,65 @@ public class MainActivity extends AppCompatActivity {
                 ? data.tempCelsius + " C"
                 : "N/A");
 
-        // Calculate consumption in L/100km using improved AFR (load + RPM + temperature + pressure + throttle)
-        // NOTE: used only for instantaneous display, not for accumulation
-        float fuelMafL100 = calcFuelRateMaf(data.mafGps, data.speedKmh, data.engineLoad, data.rpm,
-                                            data.iatCelsius, data.mapKpa, data.baroKpa, data.throttlePosition);
-
-        // Calculate fuel flow rate in L/h using improved AFR
-        // NOTE: used both for instantaneous display and total accumulation
-        float fuelFlowMafLs = calcFuelFlowMaf(data.mafGps, data.engineLoad, data.rpm,
-                                              data.iatCelsius, data.mapKpa, data.baroKpa, data.throttlePosition);
-
-        // Convert L/100km to instantaneous km/L
-        float kmLMaf = fuelMafL100 > 0 ? 100.0f / fuelMafL100 : -1f;
-
         // Display instantaneous km/L
-        tvFuelRateInstantMaf.setText(kmLMaf > 0
-                ? String.format(java.util.Locale.US, "%.2f", kmLMaf)
+        tvFuelRateInstantMaf.setText(calc.kmLMaf > 0
+                ? String.format(java.util.Locale.US, "%.2f", calc.kmLMaf)
                 : (data.speedKmh == 0 ? "stopped" : "N/A"));
 
         // Display fuel flow rate in L/h (liters per hour)
-        tvFuelFlowMaf.setText(fuelFlowMafLs > 0
-                ? String.format(java.util.Locale.US, "%.2f", fuelFlowMafLs)
+        tvFuelFlowMaf.setText(calc.fuelFlowMafLh > 0
+                ? String.format(java.util.Locale.US, "%.2f", calc.fuelFlowMafLh)
                 : "N/A");
 
-        // Calculate trip statistics
-        long currentTimeMs = System.currentTimeMillis();
-        if (lastUpdateTimeMs > 0 && data.speedKmh > 0) {
-            double elapsedHours = (currentTimeMs - lastUpdateTimeMs) / 3600000.0; // ms to hours
-            double distanceKm = data.speedKmh * elapsedHours;
-            totalDistanceKm += distanceKm;
-
-            // Accumulate fuel consumption from L/h flow rate
-            if (fuelFlowMafLs > 0) {
-                totalFuelMafLiters += fuelFlowMafLs * elapsedHours;
-            }
-        }
-        lastUpdateTimeMs = currentTimeMs;
-
         // Display traveled km
-        tvTotalKm.setText(String.format(java.util.Locale.US, "%.2f", totalDistanceKm));
+        tvTotalKm.setText(String.format(java.util.Locale.US, "%.2f", calc.totalDistanceKm));
 
         // Average speed
-        double avgSpeed = calculateAverageSpeed();
-        if (avgSpeed > 0) {
-            tvAvgSpeed.setText(String.format(java.util.Locale.US, "%.1f km/h", avgSpeed));
+        if (calc.avgSpeed > 0) {
+            tvAvgSpeed.setText(String.format(java.util.Locale.US, "%.1f km/h", calc.avgSpeed));
         } else {
             tvAvgSpeed.setText("--");
         }
 
         // Average km/L
-        double avgKmLMaf = calculateAverageFuelConsumption();
-        if (avgKmLMaf > 0) {
-            tvAvgFuelMaf.setText(String.format(java.util.Locale.US, "%.2f", avgKmLMaf));
+        if (calc.avgKmLMaf > 0) {
+            tvAvgFuelMaf.setText(String.format(java.util.Locale.US, "%.2f", calc.avgKmLMaf));
         } else {
             tvAvgFuelMaf.setText("--");
         }
+    }
 
-        // Update current trip record at each reading
-        if (currentTrip != null && totalDistanceKm > 0) {
-            currentTrip.updateTrip(totalDistanceKm, calculateAverageSpeed(), calculateAverageFuelConsumption());
-            tripLogManager.updateCurrentTrip(currentTrip);
+    // ─── CALCULATIONS ─────────────────────────────────────────────────────
+
+    private CalculatedData calculateDerivedData(OBDData data) {
+        CalculatedData calc = new CalculatedData();
+
+        // Instant Fuel consumption
+        calc.fuelMafL100 = calcFuelRateMaf(data.mafGps, data.speedKmh, data.engineLoad, data.rpm,
+                data.iatCelsius, data.mapKpa, data.baroKpa, data.throttlePosition);
+        calc.fuelFlowMafLh = calcFuelFlowMaf(data.mafGps, data.engineLoad, data.rpm,
+                data.iatCelsius, data.mapKpa, data.baroKpa, data.throttlePosition);
+        calc.kmLMaf = (calc.fuelMafL100 > 0) ? (100.0f / calc.fuelMafL100) : -1f;
+
+        // Trip statistics (distance, fuel, average speed/consumption)
+        if (data.speedKmh > 0) {
+            long currentTimeMs = System.currentTimeMillis();
+            if (lastUpdateTimeMs > 0) {
+                double elapsedHours = (currentTimeMs - lastUpdateTimeMs) / 3600000.0; // ms to hours
+                double distanceKm = data.speedKmh * elapsedHours;
+                totalDistanceKm += distanceKm;
+                if (calc.fuelFlowMafLh > 0) {
+                    totalFuelMafLiters += calc.fuelFlowMafLh * elapsedHours;
+                }
+            }
+            lastUpdateTimeMs = System.currentTimeMillis();
         }
+        calc.totalDistanceKm = totalDistanceKm;
+        calc.totalFuelMafLiters = totalFuelMafLiters;
+        calc.avgSpeed = calculateAverageSpeed();
+        calc.avgKmLMaf = calculateAverageFuelConsumption();
+
+        return calc;
     }
 
     private void showStatus(String msg) {
@@ -1340,6 +1320,7 @@ public class MainActivity extends AppCompatActivity {
     private void showProgress(boolean show) {
         progressBar.setVisibility(show ? View.VISIBLE : View.GONE);
     }
+
 
     /**
      * Calculates average speed as total km / total time in hours
@@ -1364,11 +1345,24 @@ public class MainActivity extends AppCompatActivity {
             : 0.0;
     }
 
+    /**
+     * Update current trip with latest calculated data.
+     */
+    private void updateCurrentTrip(CalculatedData calc) {
+        if (currentTrip != null && totalDistanceKm > 0) {
+            currentTrip.updateTrip(calc);
+            tripLogManager.updateCurrentTrip(currentTrip);
+        }
+    }
+
+
     // ─── DISCONNECTION ───────────────────────────────────────────────────
 
     private void disconnect() {
         shouldStayConnected = false; // Disable automatic reconnection
         stopPolling();
+        // Aggiorna viaggio se necessario
+        updateCurrentTrip(null);
 
         // Close trip record on disconnection
         if (currentTrip != null && totalDistanceKm > 0.01) {
@@ -1405,14 +1399,8 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-
-        // Make sure trip is always closed when app is destroyed
-        if (currentTrip != null && totalDistanceKm > 0.01) {
-            currentTrip.endTrip(totalDistanceKm, calculateAverageSpeed(), calculateAverageFuelConsumption());
-            tripLogManager.updateCurrentTrip(currentTrip);
-            currentTrip = null;
-        }
-
+        // Aggiorna viaggio se necessario
+        updateCurrentTrip(null);
         disconnect();
     }
 
@@ -1428,7 +1416,20 @@ public class MainActivity extends AppCompatActivity {
         int mapKpa = -1;      // Manifold Absolute Pressure (PID 0x0B), -1 = not available
         int baroKpa = -1;     // Barometric Pressure (PID 0x33), -1 = not available
         int throttlePosition = -1; // Throttle Position (PID 0x11), 0-100%, -1 = not available
+        long sampleTimeMs = -1; // Timestamp of the sample, -1 = not set
     }
+
+    // Nuova struttura per dati derivati/statistici e istantanei
+    static class CalculatedData {
+        float fuelMafL100 = -1f;
+        float fuelFlowMafLh = -1f;
+        float kmLMaf = -1f;
+        double totalDistanceKm = 0.0;
+        double totalFuelMafLiters = 0.0;
+        double avgSpeed = 0.0;
+        double avgKmLMaf = 0.0;
+    }
+
 
     // ─── STATIC METHODS FOR DATA SHARING WITH SETTINGSACTIVITY ──────────
 

@@ -1,5 +1,7 @@
 package com.ffxx68.obdreader;
 
+import com.ffxx68.obdreader.MainActivity.CalculatedData;
+
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -34,6 +36,18 @@ public class TripLog {
         this.avgKmLMaf = avgKmLMaf;
     }
 
+    /**
+     * Aggiorna i dati del viaggio usando la struttura CalculatedData
+     */
+    public void updateTrip(CalculatedData calc) {
+        if (calc != null) {
+            this.totalKm = calc.totalDistanceKm;
+            this.avgSpeedKmh = calc.avgSpeed;
+            this.avgKmLMaf = calc.avgKmLMaf;
+        }
+    }
+
+    // Versione legacy per compatibilità
     public void updateTrip(double totalKm, double avgSpeedKmh, double avgKmLMaf) {
         this.totalKm = totalKm;
         this.avgSpeedKmh = avgSpeedKmh;
