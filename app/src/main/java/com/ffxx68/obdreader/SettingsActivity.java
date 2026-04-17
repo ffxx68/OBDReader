@@ -32,6 +32,7 @@ public class SettingsActivity extends AppCompatActivity {
     private static final String PREF_PROTOCOL = "selectedProtocol";
 
     private RadioGroup rgProtocol;
+    private RadioGroup rgFuelType;
     private TextView tvSupportedPids;
     private NestedScrollView scrollPids;
     private TextView tvSelectedDevice;
@@ -60,6 +61,7 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void initViews() {
         rgProtocol = findViewById(R.id.rgProtocol);
+        rgFuelType = findViewById(R.id.rgFuelType);
         tvSupportedPids = findViewById(R.id.tvSupportedPids);
         scrollPids = findViewById(R.id.scrollPids);
         tvSelectedDevice = findViewById(R.id.tvSelectedDevice);
@@ -69,6 +71,9 @@ public class SettingsActivity extends AppCompatActivity {
 
         // Listen for protocol changes
         rgProtocol.setOnCheckedChangeListener((group, checkedId) -> saveProtocolSelection(checkedId));
+
+        // Listen for fuel type changes
+        rgFuelType.setOnCheckedChangeListener((group, checkedId) -> saveFuelTypeSelection(checkedId));
 
         // Scan devices button
         btnScanDevices.setOnClickListener(v -> checkPermissionsAndScan());
@@ -90,24 +95,28 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void loadSettings() {
-        // Load selected protocol from SharedPreferences
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+
         int savedProtocol = prefs.getInt(PREF_PROTOCOL, R.id.rbAuto);
         rgProtocol.check(savedProtocol);
-
-        // Also update the static variable in MainActivity
         MainActivity.setSelectedProtocol(savedProtocol);
+
+        int savedFuelType = prefs.getInt(MainActivity.PREF_FUEL_TYPE, MainActivity.FUEL_DIESEL);
+        rgFuelType.check(savedFuelType == MainActivity.FUEL_PETROL ? R.id.rbPetrol : R.id.rbDiesel);
     }
 
     private void saveProtocolSelection(int checkedId) {
-        // Save to SharedPreferences
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        SharedPreferences.Editor editor = prefs.edit();
-        editor.putInt(PREF_PROTOCOL, checkedId);
-        editor.apply();
-
-        // Also update the static variable in MainActivity
+        prefs.edit().putInt(PREF_PROTOCOL, checkedId).apply();
         MainActivity.setSelectedProtocol(checkedId);
+    }
+
+    private void saveFuelTypeSelection(int checkedId) {
+        int fuelType = (checkedId == R.id.rbPetrol) ? MainActivity.FUEL_PETROL : MainActivity.FUEL_DIESEL;
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit().putInt(MainActivity.PREF_FUEL_TYPE, fuelType).apply();
+        MainActivity instance = MainActivity.getInstance();
+        if (instance != null) instance.setFuelType(fuelType);
     }
 
     @Override

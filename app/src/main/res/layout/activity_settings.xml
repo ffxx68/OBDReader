@@ -77,6 +77,43 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:text="Tipo carburante:"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/white"
+        android:paddingBottom="8dp" />
+
+    <RadioGroup
+        android:id="@+id/rgFuelType"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="20dp"
+        android:orientation="horizontal">
+
+        <RadioButton
+            android:id="@+id/rbDiesel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="24dp"
+            android:text="Diesel"
+            android:textSize="14sp"
+            android:textColor="@android:color/white"
+            android:checked="true" />
+
+        <RadioButton
+            android:id="@+id/rbPetrol"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Benzina"
+            android:textSize="14sp"
+            android:textColor="@android:color/white"
+            android:checked="false" />
+
+    </RadioGroup>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
         android:text="Protocollo forzato:"
         android:textSize="16sp"
         android:textStyle="bold"

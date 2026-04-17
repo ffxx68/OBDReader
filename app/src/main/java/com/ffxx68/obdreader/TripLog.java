@@ -41,9 +41,9 @@ public class TripLog {
      */
     public void updateTrip(CalculatedData calc) {
         if (calc != null) {
-            this.totalKm = calc.totalDistanceKm;
+            this.totalKm = calc.totalDistance;
             this.avgSpeedKmh = calc.avgSpeed;
-            this.avgKmLMaf = calc.avgKmLMaf;
+            this.avgKmLMaf = calc.avgFuelRate;
         }
     }
 

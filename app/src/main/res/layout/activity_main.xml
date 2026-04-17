@@ -191,6 +191,36 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
+        <!-- Carico motore -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:paddingEnd="12dp"
+                android:text="Carico motore:"
+                android:textColor="@android:color/white"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvEngineLoad"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="start"
+                android:text="--"
+                android:textColor="@android:color/white"
+                android:textSize="34sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
         <!-- Consumi istantanei -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -241,7 +271,7 @@
                 android:textStyle="bold" />
 
             <TextView
-                android:id="@+id/tvFuelFlowMaf"
+                android:id="@+id/tvFuelFlow"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
