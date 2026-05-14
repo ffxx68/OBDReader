@@ -14,11 +14,12 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.widget.*;
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -256,6 +257,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvInstantFuelRate;
     private TextView tvInstantFuelFlow;
     private TextView tvTotalDistance;
+    private TextView tvTotLiters;
     private TextView tvAvgSpeed;
     private TextView tvAvgFuelRate;
     private TextView tvProtocol;
@@ -271,6 +273,14 @@ public class MainActivity extends AppCompatActivity {
     private double totalFuelMafLiters = 0.0;
     private long lastUpdateTimeMs = 0;
 
+    // Accumulatori per deviazione standard velocità e RPM medio/std dev
+    private long   speedSampleCount = 0;
+    private double speedSampleSum   = 0.0;
+    private double speedSampleSumSq = 0.0;
+    private long   rpmSampleCount   = 0;
+    private double rpmSampleSum     = 0.0;
+    private double rpmSampleSumSq   = 0.0;
+
     // Gestione log viaggi
     private TripLogManager tripLogManager;
     private TripLog currentTrip;
@@ -282,18 +292,49 @@ public class MainActivity extends AppCompatActivity {
     // Tipo carburante selezionato dall'utente (FUEL_DIESEL / FUEL_PETROL)
     private int fuelType = FUEL_DIESEL;
 
+    // Flag per abilitare la modalità mock solo su emulatore
+    private boolean useMockData = false;
+
+    // --- MOCK ERROR SIMULATION ---
+    private static int mockReadCount = 0;
+
+    /**
+     * Rileva se l'app è in esecuzione su un emulatore Android.
+     */
+    public static boolean isEmulator() {
+        String fingerprint = android.os.Build.FINGERPRINT;
+        String model = android.os.Build.MODEL;
+        String manufacturer = android.os.Build.MANUFACTURER;
+        String brand = android.os.Build.BRAND;
+        String device = android.os.Build.DEVICE;
+        String product = android.os.Build.PRODUCT;
+        String hardware = android.os.Build.HARDWARE;
+
+        return (fingerprint != null && (fingerprint.startsWith("generic") || fingerprint.contains("google/sdk_gphone") || fingerprint.startsWith("unknown")))
+                || (model != null && (model.contains("google_sdk") || model.contains("Emulator") || model.contains("Android SDK built for x86") || model.contains("sdk_gphone")))
+                || (manufacturer != null && (manufacturer.contains("Genymotion") || manufacturer.equalsIgnoreCase("unknown") || manufacturer.equalsIgnoreCase("Google")))
+                || (brand != null && (brand.startsWith("generic") || brand.equalsIgnoreCase("android") || brand.equalsIgnoreCase("google")))
+                || (device != null && (device.startsWith("generic") || device.startsWith("emulator") || device.contains("emu")))
+                || (product != null && (product.equals("google_sdk") || product.contains("sdk") || product.contains("emulator") || product.contains("simulator") || product.contains("sdk_gphone")))
+                || (hardware != null && (hardware.contains("goldfish") || hardware.contains("ranchu") || hardware.contains("qcom")));
+
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         instance = this;
         setContentView(R.layout.activity_main);
-
+        initViews(); // Inizializza subito le view
+        useMockData = isEmulator();
+        if (useMockData) {
+            showStatus("Modalità MOCK attiva (emulatore rilevato). Dati OBD simulati.");
+        }
         tripLogManager = new TripLogManager(this);
-
-        initViews();
         loadSavedSettings();
         initBluetooth();
         setupListeners();
+
     }
 
     // ─── INIZIALIZZAZIONE ────────────────────────────────────────────────────
@@ -305,14 +346,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void initViews() {
+
         tvStatus    = findViewById(R.id.tvStatus);
         tvRpm       = findViewById(R.id.tvRpm);
         tvInstantSpeed     = findViewById(R.id.tvSpeed);
-        tvTemp      = findViewById(R.id.tvTemp);
         tvEngineLoad = findViewById(R.id.tvEngineLoad);
         tvInstantFuelRate = findViewById(R.id.tvFuelRateInstantMaf);
         tvInstantFuelFlow = findViewById(R.id.tvFuelFlow);
         tvTotalDistance   = findViewById(R.id.tvTotalKm);
+        tvTotLiters   = findViewById(R.id.tvTotLiters);
         tvAvgSpeed  = findViewById(R.id.tvAvgSpeed);
         tvAvgFuelRate = findViewById(R.id.tvAvgFuelMaf);
         tvElmVersion = findViewById(R.id.tvElmVersion);
@@ -325,6 +367,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void initBluetooth() {
+        if (useMockData) {
+            showStatus("Modalità MOCK attiva. Tocca 'Connetti' per simulare la ECU");
+            btnConnect.setEnabled(true);
+            return;
+        }
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (bluetoothAdapter == null) {
             showStatus("Bluetooth non supportato su questo dispositivo");
@@ -358,10 +405,18 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+
+        // Aggiorna la modalità mock anche qui
+        useMockData = isEmulator();
+
         // Ricarica preferenze che potrebbero essere cambiate in SettingsActivity
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         fuelType = prefs.getInt(PREF_FUEL_TYPE, FUEL_DIESEL);
-        // Verifica se il dispositivo è stato selezionato nelle impostazioni
+        if (useMockData) {
+            showStatus("Modalità MOCK attiva. Tocca 'Connetti' per simulare la ECU");
+            btnConnect.setEnabled(true);
+            return;
+        }
         if (!isConnected && bluetoothAdapter != null && bluetoothAdapter.isEnabled()) {
             String deviceName = prefs.getString(PREF_DEVICE_NAME, null);
             if (deviceName != null) {
@@ -374,24 +429,55 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // ─── CONNESSIONE AL DISPOSITIVO SALVATO ─────────────────────────────────
+    // Mock: connessione ECU
+    private void connectToSavedDeviceMock() {
+        showStatus("[MOCK] Connessione simulata alla ECU");
+        showProgress(false);
+        isConnected = true;
+        btnConnect.setEnabled(false);
+        btnDisconnect.setEnabled(true);
+        supportedPids.clear();
+        supportedPids.addAll(MOCK_PIDS);
+        // Avvia polling mock
+        startPolling();
+        if (currentTrip == null) {
+            currentTrip = new TripLog();
+            tripLogManager.saveTrip(currentTrip);
+        }
+    }
 
+    // Mock: dati OBD
+    private OBDData fetchOBDDataMock() {
+        OBDData data = new OBDData();
+        data.rpm = 900 + (int)(Math.random()*200);
+        data.instantSpeed = 50 + (int)(Math.random()*10);
+        data.tempCelsius = 85 + (int)(Math.random()*5);
+        data.engineLoad = 30 + (int)(Math.random()*10);
+        data.mafGps = 12.5f + (float)(Math.random()*2);
+        data.iatCelsius = 25 + (int)(Math.random()*3);
+        data.mapKpa = 110 + (int)(Math.random()*5);
+        data.baroKpa = 100 + (int)(Math.random()*2);
+        data.throttlePosition = 40 + (int)(Math.random()*10);
+        data.fuelRateEcuGps = -1f;
+        return data;
+    }
+
+    // Override connectToSavedDevice
     private void connectToSavedDevice() {
+        if (useMockData) {
+            connectToSavedDeviceMock();
+            return;
+        }
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         String deviceAddress = prefs.getString(PREF_DEVICE_ADDRESS, null);
         String deviceName = prefs.getString(PREF_DEVICE_NAME, null);
-
         if (deviceAddress == null) {
             showStatus("Nessun dispositivo selezionato. Vai nelle Impostazioni.");
             return;
         }
-
-        // Imposta il flag per riconnessione automatica
         shouldStayConnected = true;
         consecutiveBTErrors = 0;
         consecutiveNoData = 0;
-
-        // Verifica permessi
         List<String> needed = new ArrayList<>();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
@@ -399,14 +485,11 @@ public class MainActivity extends AppCompatActivity {
                 needed.add(Manifest.permission.BLUETOOTH_CONNECT);
             }
         }
-
         if (!needed.isEmpty()) {
             ActivityCompat.requestPermissions(this,
                     needed.toArray(new String[0]), PERMISSION_REQUEST_CODE);
             return;
         }
-
-        // Ottieni il dispositivo e connetti
         try {
             BluetoothDevice device = bluetoothAdapter.getRemoteDevice(deviceAddress);
             connectToDevice(device);
@@ -415,29 +498,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode,
-                                           @NonNull String[] permissions,
-                                           @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            boolean allGranted = true;
-            for (int r : grantResults) {
-                if (r != PackageManager.PERMISSION_GRANTED) {
-                    allGranted = false;
-                    break;
-                }
-            }
-            if (allGranted) {
-                connectToSavedDevice();
-            } else {
-                showStatus("Permessi Bluetooth negati. L'app non può funzionare.");
-            }
-        }
-    }
-
     // ─── CONNESSIONE BLUETOOTH ───────────────────────────────────────────────
-
     @SuppressLint("MissingPermission")
     private void connectToDevice(BluetoothDevice device) {
         showStatus("Connessione a " + device.getName() + "...");
@@ -500,7 +561,10 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
-    // ─── INIZIALIZZAZIONE ELM327 ─────────────────────────────────────────────
+    /** Eccezione specifica per errori di comunicazione con la ECU (distinta da errori BT). */
+    static class EcuConnectionException extends IOException {
+        EcuConnectionException(String message) { super(message); }
+    }
 
     /**
      * Sequenza di inizializzazione standard per chip ELM327.
@@ -546,11 +610,6 @@ public class MainActivity extends AppCompatActivity {
         if (!ecuOk) {
             throw new EcuConnectionException("ECU non risponde o protocollo incompatibile");
         }
-    }
-
-    /** Eccezione specifica per errori di comunicazione con la ECU (distinta da errori BT). */
-    static class EcuConnectionException extends IOException {
-        EcuConnectionException(String message) { super(message); }
     }
 
     /**
@@ -618,6 +677,9 @@ public class MainActivity extends AppCompatActivity {
             final String logMsg = pidList.toString();
             mainHandler.post(() -> {
                 logBuffer.append(">> ").append(logMsg).append("\n");
+                // Invia broadcast per aggiornare la lista PID in SettingsActivity
+                Intent intent = new Intent("ACTION_PIDS_UPDATED");
+                LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
             });
         }
 
@@ -737,67 +799,64 @@ public class MainActivity extends AppCompatActivity {
         return sb.length() > 0 ? sb.toString() : "N/A";
     }
 
-    // ─── OBD-II COMMANDS ─────────────────────────────────────────────────
 
+    // ─── OBD-II COMMANDS ─────────────────────────────────────────────────
     /**
      * Sends an AT or OBD-II command to ELM327 and reads the response.
      * The terminator '\r' is required by ELM327.
      * The chip responds with '>' (prompt) when ready for the next command.
      */
     private String sendCommand(String command, int delayMs) throws IOException {
-        outputStream.write((command + "\r").getBytes());
-        outputStream.flush();
-        try { Thread.sleep(delayMs); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); };
-
-        StringBuilder response = new StringBuilder();
-        long timeout = System.currentTimeMillis() + 3000;
-
-        while (System.currentTimeMillis() < timeout) {
-            if (inputStream.available() > 0) {
-                int b = inputStream.read();
-                char c = (char) b;
-                if (c == '>') break; // ELM327 ready for next command
-                response.append(c);
-            } else {
-                try { Thread.sleep(10); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); };
-            }
+        if (outputStream == null || inputStream == null) {
+            NullPointerException npe = new NullPointerException("outputStream o inputStream null in sendCommand");
+            CommunicationLogActivity.logCriticalError("sendCommand", npe);
+            throw npe;
         }
-        String result = response.toString().replace("\r", "").replace("\n", " ").trim();
+        try {
+            outputStream.write((command + "\r").getBytes());
+            outputStream.flush();
+            try { Thread.sleep(delayMs); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); };
 
-        // Build log with PID description if applicable
-        String logLine = ">> " + command + "\n<< " + result + "\n";
-        if (command.length() == 4 && command.startsWith("01")) {
-            // It's a Mode 01 command - extract PID and find description
-            try {
-                int pid = Integer.parseInt(command.substring(2), 16);
-                String description = PID_DESCRIPTIONS.get(pid);
-                if (description != null) {
-                    logLine = ">> " + command + " (" + description + ")\n<< " + result + "\n";
+            StringBuilder response = new StringBuilder();
+            long timeout = System.currentTimeMillis() + 3000;
+
+            while (System.currentTimeMillis() < timeout) {
+                if (inputStream.available() > 0) {
+                    int b = inputStream.read();
+                    char c = (char) b;
+                    if (c == '>') break; // ELM327 ready for next command
+                    response.append(c);
+                } else {
+                    try { Thread.sleep(10); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); };
                 }
-            } catch (NumberFormatException ignored) {
-                // Keep default value
             }
+            String result = response.toString().replace("\r", "").replace("\n", " ").trim();
+
+            // Build log with PID description if applicable
+            String logLine = ">> " + command + "\n<< " + result + "\n";
+            if (command.length() == 4 && command.startsWith("01")) {
+                // It's a Mode 01 command - extract PID and find description
+                try {
+                    int pid = Integer.parseInt(command.substring(2), 16);
+                    String description = PID_DESCRIPTIONS.get(pid);
+                    if (description != null) {
+                        logLine = ">> " + command + " (" + description + ")\n<< " + result + "\n";
+                    }
+                } catch (NumberFormatException ignored) {
+                    // Keep default value
+                }
+            }
+
+            final String finalLogLine = logLine;
+            mainHandler.post(() -> {
+                CommunicationLogActivity.logMessage(finalLogLine);
+            });
+
+            return result;
+        } catch (IOException | NullPointerException e) {
+            CommunicationLogActivity.logCriticalError("sendCommand", e);
+            throw e;
         }
-
-        final String finalLogLine = logLine;
-        mainHandler.post(() -> {
-            // Add to static buffer
-            logBuffer.append(finalLogLine);
-
-            // Keep buffer within MAX_LOG_LINES lines
-            String current = logBuffer.toString();
-            String[] lines = current.split("\n", -1);
-            if (lines.length > MAX_LOG_LINES) {
-                int excess = lines.length - MAX_LOG_LINES;
-                StringBuilder trimmed = new StringBuilder();
-                for (int i = excess; i < lines.length; i++) {
-                    trimmed.append(lines[i]).append("\n");
-                }
-                logBuffer = trimmed;
-            }
-        });
-
-        return result;
     }
 
     // Overload without custom sleep
@@ -816,6 +875,9 @@ public class MainActivity extends AppCompatActivity {
         if (currentTrip == null || totalDistanceKm == 0) {
             totalDistanceKm = 0.0;
             totalFuelMafLiters = 0.0;
+            speedSampleCount = 0; rpmSampleCount = 0;
+            speedSampleSum   = 0.0; speedSampleSumSq = 0.0;
+            rpmSampleSum     = 0.0; rpmSampleSumSq   = 0.0;
         }
         lastUpdateTimeMs = System.currentTimeMillis();
 
@@ -826,6 +888,12 @@ public class MainActivity extends AppCompatActivity {
 
                 new Thread(() -> {
                     try {
+                        if (useMockData) {
+                            mockReadCount++;
+                            if (mockReadCount == 6) {
+                                throw new RuntimeException("Simulated critical error after 5 mock reads");
+                            }
+                        }
                         OBDData data = fetchOBDData();
                         CalculatedData calc = calculateDerivedData(data);
                         updateCurrentTrip(calc);
@@ -915,6 +983,12 @@ public class MainActivity extends AppCompatActivity {
                                 }
                             }
                         });
+                    } catch (Exception e) {
+                        CommunicationLogActivity.logCriticalError("Polling thread", e);
+                        mainHandler.post(() -> {
+                            showStatus("Errore imprevisto: " + e.getMessage());
+                            if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
+                        });
                     }
                 }).start();
             }
@@ -939,6 +1013,8 @@ public class MainActivity extends AppCompatActivity {
      *   AA, BB = data bytes
      */
     private OBDData fetchOBDData() throws IOException {
+        if (useMockData) return fetchOBDDataMock();
+
         OBDData data = new OBDData();
 
         // RPM — PID 0x0C — Formula: ((A*256)+B)/4 → rpm
@@ -1081,11 +1157,10 @@ public class MainActivity extends AppCompatActivity {
 
 
     // ─── AFR CALCULATION ─────────────────────────────────────────────────
-
     /**
      * Diesel AFR curve (piecewise linear, load-based).
      *
-     * Modern common-rail diesel runs with large excess air at idle/low load.
+     * 1) Modern common-rail diesel runs with large excess air at idle/low load.
      * As load increases, AFR drops toward stoichiometric (~14.5:1).
      *
      * | Load  | AFR    | Condition                        |
@@ -1095,10 +1170,34 @@ public class MainActivity extends AppCompatActivity {
      * | 25 %  | 40 : 1 | Light cruise                     |
      * | 60 %  | 20 : 1 | Normal / highway                 |
      * |100 %  | 14 : 1 | Full load                        |
+     *
+     * FUNCTION REPLACED - WHY NOT ENGINE_LOAD (PID 0x04)?
+     * ─────────────────────────────────────────────────────────────────────
+     * On most diesel ECUs, calculated engine load is derived from the MAF
+     * sensor reading:
+     *
+     *   LOAD = (MAF_actual / MAF_max_theoretical) × 100
+     *
+     * Using LOAD to select AFR, and then dividing MAF by that AFR to obtain
+     * fuel flow, creates a circular dependency: the correction factor is
+     * computed from the very value it is meant to correct. No independent
+     * information is added, and any MAF bias at idle (where MAF_max is a
+     * poor reference) propagates directly into the fuel estimate.
+     *
      */
-    private float calculateDieselAFR(int engineLoad) {
-        if (engineLoad < 0) return 27.0f; // fallback: average highway cruise
+     /*
+     private float calculateDieselAFR(int engineLoad, int rpm) {
+        if (engineLoad < 0) return 27.0f;
         int load = Math.max(0, Math.min(100, engineLoad));
+
+        // Some PD ECUs report inflated load at idle (often 20–35%)
+        // because load PID is MAF-ratio based, not torque-based.
+        // Use RPM to detect true idle and override load-based AFR.
+        if (rpm > 0 && rpm < 1000) {
+            // True idle: interpolate between 900 rpm floor and load=0 AFR
+            // PD engines at idle: AFR realistically 50–65:1
+            return 60.0f;
+        }
 
         int[]   loadPts = {  0,  10,  25,  60, 100 };
         float[] afrPts  = { 80f, 70f, 40f, 20f, 14f };
@@ -1106,6 +1205,77 @@ public class MainActivity extends AppCompatActivity {
         for (int i = 0; i < loadPts.length - 1; i++) {
             if (load <= loadPts[i + 1]) {
                 float t = (float)(load - loadPts[i]) / (loadPts[i + 1] - loadPts[i]);
+                return afrPts[i] + t * (afrPts[i + 1] - afrPts[i]);
+            }
+        }
+        return afrPts[afrPts.length - 1];
+    }
+    */
+    /**
+     * Estimates the Air-Fuel Ratio (AFR) for a diesel engine using RPM and
+     * boost pressure as independent load proxies.
+     *
+     * WHY RPM + BOOST PRESSURE?
+     * ─────────────────────────────────────────────────────────────────────
+     * Both signals are physically independent of the MAF sensor:
+     *
+     *  • RPM is measured by the crankshaft position sensor and reliably
+     *    identifies true idle (< 900 rpm on a warmed-up 1.9 TDI PD),
+     *    where ECU-reported load is known to be inflated (often 20–35 %
+     *    even with negligible fueling).
+     *
+     *  • Boost pressure (MAP − barometric pressure) is measured by a
+     *    dedicated pressure sensor and reflects actual engine breathing
+     *    and turbocharger output — a genuine proxy for torque demand,
+     *    unaffected by MAF calibration drift.
+     *
+     * PUMP-INJECTOR (PUMPE-DÜSE) NOTE:
+     * ─────────────────────────────────────────────────────────────────────
+     * PD injectors (e.g. VW/Audi AGR, ALH, ASZ, BKD ~1999–2006) are cam-
+     * driven and cannot meter arbitrarily small fuel quantities. As a result,
+     * the minimum injection dose at idle is larger than on common-rail
+     * systems, and real-world AFR at idle is considerably lower (~50–65:1)
+     * than the >100:1 values seen on modern common-rail engines.
+     * The idle AFR constant below (60.0) reflects this constraint.
+     *
+     * AFR CURVE (boost-pressure based):
+     * ─────────────────────────────────────────────────────────────────────
+     *  Boost (relative)  |  AFR   | Condition
+     *  ──────────────────|────────|──────────────────────────────────────
+     *   RPM < 1000       | 60 : 1 | True idle (RPM override)
+     *    0 %             | 55 : 1 | No boost, light throttle
+     *   10 %             | 45 : 1 | Very light load
+     *   35 %             | 28 : 1 | Part load / urban cruise
+     *   70 %             | 18 : 1 | Highway / moderate boost
+     *  100 %             | 14 : 1 | Full load
+     *
+     * @param rpm      Engine speed in RPM (from PID 0x0C)
+     * @param mapKpa   Intake manifold absolute pressure in kPa (PID 0x0B)
+     * @param baroKpa  Barometric pressure in kPa (PID 0x33); if unavailable,
+     *                 pass 101 as a standard sea-level fallback
+     * @return         Estimated AFR (dimensionless mass ratio, air / fuel)
+     */
+    private float calculateDieselAFR(int rpm, int mapKpa, int baroKpa) {
+        // Boost pressure = MAP - baro (negative = vacuum, positive = boost)
+        float boostKpa = mapKpa - baroKpa;
+
+        // Normalize boost to a 0–1 load proxy
+        // A typical 1.9 TDI PD peaks around 180 kPa absolute = ~80 kPa boost
+        float boostLoad = Math.max(0f, Math.min(1f, boostKpa / 80f));
+
+        // Idle detection via RPM (independent of MAF/LOAD)
+        if (rpm < 1000) {
+            return 60.0f; // true idle, PD engine
+        }
+
+        // Piecewise on boost load instead of ECU load
+        float[] boostPts = { 0.00f, 0.10f, 0.35f, 0.70f, 1.00f };
+        float[] afrPts   = { 55.0f, 45.0f, 28.0f, 18.0f, 14.0f };
+
+        for (int i = 0; i < boostPts.length - 1; i++) {
+            if (boostLoad <= boostPts[i + 1]) {
+                float t = (boostLoad - boostPts[i])
+                        / (boostPts[i + 1] - boostPts[i]);
                 return afrPts[i] + t * (afrPts[i + 1] - afrPts[i]);
             }
         }
@@ -1155,37 +1325,44 @@ public class MainActivity extends AppCompatActivity {
      * @return Effective AFR to use in fuel-flow calculation
      */
     private float calculateEnhancedAFR(int engineLoad, int rpm,
-                                        int iatCelsius, int throttlePosition) {
+                                        int iatCelsius,
+                                       int mapKpa, int baroKpa, int throttlePosition) {
         float afr;
 
-        if (fuelType == FUEL_PETROL) {
-            // ── PETROL ──────────────────────────────────────────────────
-            afr = calculatePetrolAFR(engineLoad);
+        try {
+            if (fuelType == FUEL_PETROL) {
+                // ── PETROL ──────────────────────────────────────────────────
+                afr = calculatePetrolAFR(engineLoad);
 
-            // At WOT (throttle > 85 %) use throttle position as an additional
-            // confirmation of enrichment rather than relying on load alone,
-            // because some ECUs report load < 80 % even under full throttle.
-            if (throttlePosition >= 85 && afr > 13.0f) {
-                afr = 13.0f; // enforce enrichment floor
+                // At WOT (throttle > 85 %) use throttle position as an additional
+                // confirmation of enrichment rather than relying on load alone,
+                // because some ECUs report load < 80 % even under full throttle.
+                if (throttlePosition >= 85 && afr > 13.0f) {
+                    afr = 13.0f; // enforce enrichment floor
+                }
+
+            } else {
+                // ── DIESEL ──────────────────────────────────────────────────
+                afr = calculateDieselAFR(rpm, mapKpa, baroKpa);
+
+                // PID 0x11 (throttle) controls EGR/swirl on diesel, not fuel quantity.
+                // No correction applied here.
             }
 
-        } else {
-            // ── DIESEL ──────────────────────────────────────────────────
-            afr = calculateDieselAFR(engineLoad);
+            // Minor IAT correction (applies to both types).
+            // Reference: 20 °C = no correction. Valid range: -20 °C to +60 °C.
+            // Effect: ±3 % max — avoids over-correction when MAF already compensates.
+            if (iatCelsius > -41) {
+                float iatFactor = 1.0f + (20 - iatCelsius) / 800f; // ≈ +3 % at -20 °C, -3 % at +60 °C
+                afr *= iatFactor;
+            }
 
-            // PID 0x11 (throttle) controls EGR/swirl on diesel, not fuel quantity.
-            // No correction applied here.
+            return afr;
+
+        } catch ( Exception e) {
+            CommunicationLogActivity.logCriticalError("calculateEnhancedAFR", e);
+            throw e;
         }
-
-        // Minor IAT correction (applies to both types).
-        // Reference: 20 °C = no correction. Valid range: -20 °C to +60 °C.
-        // Effect: ±3 % max — avoids over-correction when MAF already compensates.
-        if (iatCelsius > -41) {
-            float iatFactor = 1.0f + (20 - iatCelsius) / 800f; // ≈ +3 % at -20 °C, -3 % at +60 °C
-            afr *= iatFactor;
-        }
-
-        return afr;
     }
 
     /**
@@ -1199,7 +1376,8 @@ public class MainActivity extends AppCompatActivity {
                                    int mapKpa, int baroKpa, int throttlePosition) {
         if (mafGps < 0) return -1f;
 
-        float afr = calculateEnhancedAFR(engineLoad, rpm, iatCelsius, throttlePosition);
+        if (baroKpa == -1) baroKpa = 101; // Fallback to standard sea-level pressure if baro is unavailable
+        float afr = calculateEnhancedAFR(engineLoad, rpm, iatCelsius, mapKpa, baroKpa ,throttlePosition);
         float density = (fuelType == FUEL_PETROL) ? 750f : 840f;
 
         float litersPerSec = mafGps / afr / density;
@@ -1220,11 +1398,6 @@ public class MainActivity extends AppCompatActivity {
                 ? data.instantSpeed + " km/h"
                 : "N/A");
 
-        // Temperature (°C)
-        tvTemp.setText(data.tempCelsius > -40
-                ? data.tempCelsius + " C"
-                : "N/A");
-
         // Engine load (%)
         tvEngineLoad.setText(data.engineLoad >= 0
                 ? data.engineLoad + " %"
@@ -1242,6 +1415,9 @@ public class MainActivity extends AppCompatActivity {
 
         // Display traveled km
         tvTotalDistance.setText(String.format(java.util.Locale.US, "%.2f", calc.totalDistance));
+
+        // Display total fuel consumed in liters (Maf-based)
+        tvTotLiters.setText(String.format(java.util.Locale.US, "%.2f", calc.totalFuelMafLiters));
 
         // Average speed
         if (calc.avgSpeed > 0) {
@@ -1292,10 +1468,40 @@ public class MainActivity extends AppCompatActivity {
             }
             lastUpdateTimeMs = System.currentTimeMillis();
         }
+
+        // Accumulate speed samples (only when moving)
+        if (data.instantSpeed >= 0) {
+            speedSampleCount++;
+            speedSampleSum   += data.instantSpeed;
+            speedSampleSumSq += (double) data.instantSpeed * data.instantSpeed;
+        }
+        // Accumulate RPM samples
+        if (data.rpm >= 0) {
+            rpmSampleCount++;
+            rpmSampleSum   += data.rpm;
+            rpmSampleSumSq += (double) data.rpm * data.rpm;
+        }
+
         calc.totalDistance = totalDistanceKm;
         calc.totalFuelMafLiters = totalFuelMafLiters;
         calc.avgSpeed = calculateAverageSpeed();
         calc.avgFuelRate = calculateAverageFuelConsumption();
+
+        // Speed std dev
+        if (speedSampleCount > 1) {
+            double mean = speedSampleSum / speedSampleCount;
+            double variance = (speedSampleSumSq / speedSampleCount) - (mean * mean);
+            calc.speedStdDev = Math.sqrt(Math.max(0.0, variance));
+        }
+        // Avg RPM and RPM std dev
+        if (rpmSampleCount > 0) {
+            calc.avgRpm = rpmSampleSum / rpmSampleCount;
+        }
+        if (rpmSampleCount > 1) {
+            double meanRpm = rpmSampleSum / rpmSampleCount;
+            double varianceRpm = (rpmSampleSumSq / rpmSampleCount) - (meanRpm * meanRpm);
+            calc.rpmStdDev = Math.sqrt(Math.max(0.0, varianceRpm));
+        }
 
         return calc;
     }
@@ -1362,20 +1568,21 @@ public class MainActivity extends AppCompatActivity {
         consecutiveBTErrors = 0;
         consecutiveNoData = 0;
         closeStreams();
-
-        showStatus("Disconnected.");
         btnConnect.setEnabled(true);
         btnDisconnect.setEnabled(false);
-        tvRpm.setText("RPM: --");
-        tvInstantSpeed.setText("Speed: --");
-        tvTemp.setText("Temp: --");
-        tvEngineLoad.setText("Load: --");
-        tvInstantFuelRate.setText("Inst. km/L: --");
-        tvInstantFuelFlow.setText("Inst. L/h: --");
-        tvTotalDistance.setText("Traveled km: --");
-        tvAvgSpeed.setText("Avg speed: --");
-        tvAvgFuelRate.setText("Avg km/L: --");
+
+        showStatus("Disconnected.");
         tvElmVersion.setText("ELM327: -- | Protocol: --");
+        tvRpm.setText("--");
+        tvInstantSpeed.setText("--");
+        tvEngineLoad.setText("--");
+        tvInstantFuelRate.setText("--");
+        tvInstantFuelFlow.setText("--");
+        tvTotalDistance.setText("--");
+        tvTotLiters.setText("--");
+        tvAvgSpeed.setText("--");
+        tvAvgFuelRate.setText("--");
+
     }
 
     private void closeStreams() {
@@ -1417,6 +1624,9 @@ public class MainActivity extends AppCompatActivity {
         double totalFuelMafLiters = 0.0;
         double avgSpeed = 0.0;
         double avgFuelRate = 0.0;
+        double speedStdDev = 0.0;
+        double avgRpm = 0.0;
+        double rpmStdDev = 0.0;
     }
 
 
@@ -1448,8 +1658,12 @@ public class MainActivity extends AppCompatActivity {
      * @return Set of supported PIDs (hexadecimal values) or empty set if not connected
      */
     public static Set<Integer> getSupportedPids() {
-        if (instance != null) {
-            return new HashSet<>(instance.supportedPids);
+        MainActivity inst = getInstance();
+        if (inst != null && inst.useMockData) {
+            return new HashSet<>(MOCK_PIDS);
+        }
+        if (inst != null) {
+            return new HashSet<>(inst.supportedPids);
         }
         return new HashSet<>();
     }
@@ -1459,4 +1673,20 @@ public class MainActivity extends AppCompatActivity {
     public static MainActivity getInstance() { return instance; }
 
     public void setFuelType(int type) { fuelType = type; }
+
+    // PID mockati per test
+    private static final Set<Integer> MOCK_PIDS = new HashSet<>(Arrays.asList(
+        0x0C, // RPM
+        0x0D, // Velocità
+        0x05, // Temp liquido
+        0x04, // Carico motore
+        0x10, // MAF
+        0x0F, // IAT
+        0x0B, // MAP
+        0x33, // Baro
+        0x11  // TPS
+    ));
+
+
+
 }

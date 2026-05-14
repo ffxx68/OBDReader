@@ -4,6 +4,7 @@ import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -11,13 +12,17 @@ import android.os.Bundle;
 import android.widget.Button;
 import android.widget.RadioGroup;
 import android.widget.TextView;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.widget.NestedScrollView;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -41,6 +46,19 @@ public class SettingsActivity extends AppCompatActivity {
     private Button btnCommLog;
     private BluetoothAdapter bluetoothAdapter;
     private final List<BluetoothDevice> pairedDevices = new ArrayList<>();
+
+    private final BroadcastReceiver pidsUpdatedReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            try {
+                if ("ACTION_PIDS_UPDATED".equals(intent.getAction())) {
+                    loadSupportedPids();
+                }
+            } catch (Exception e) {
+                CommunicationLogActivity.logCriticalError("SettingsActivity.BroadcastReceiver", e);
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -128,8 +146,17 @@ public class SettingsActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Update supported PIDs when activity comes to foreground
+        // Aggiorna i PID anche se la Activity torna in foreground
         loadSupportedPids();
+        // Registra il receiver per aggiornamento automatico
+        LocalBroadcastManager.getInstance(this).registerReceiver(pidsUpdatedReceiver, new IntentFilter("ACTION_PIDS_UPDATED"));
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Deregistra il receiver per evitare memory leak
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(pidsUpdatedReceiver);
     }
 
     private void loadSupportedPids() {

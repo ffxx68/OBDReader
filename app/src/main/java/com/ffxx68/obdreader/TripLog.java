@@ -15,6 +15,9 @@ public class TripLog {
     private double totalKm;
     private double avgSpeedKmh;
     private double avgKmLMaf;
+    private double speedStdDev;
+    private double avgRpm;
+    private double rpmStdDev;
 
     public TripLog() {
         this.startTime = System.currentTimeMillis();
@@ -44,6 +47,9 @@ public class TripLog {
             this.totalKm = calc.totalDistance;
             this.avgSpeedKmh = calc.avgSpeed;
             this.avgKmLMaf = calc.avgFuelRate;
+            this.speedStdDev = calc.speedStdDev;
+            this.avgRpm = calc.avgRpm;
+            this.rpmStdDev = calc.rpmStdDev;
         }
     }
 
@@ -60,6 +66,9 @@ public class TripLog {
     public double getTotalKm() { return totalKm; }
     public double getAvgSpeedKmh() { return avgSpeedKmh; }
     public double getAvgKmLMaf() { return avgKmLMaf; }
+    public double getSpeedStdDev() { return speedStdDev; }
+    public double getAvgRpm() { return avgRpm; }
+    public double getRpmStdDev() { return rpmStdDev; }
 
     // Setters
     public void setStartTime(long startTime) { this.startTime = startTime; }
@@ -67,6 +76,9 @@ public class TripLog {
     public void setTotalKm(double totalKm) { this.totalKm = totalKm; }
     public void setAvgSpeedKmh(double avgSpeedKmh) { this.avgSpeedKmh = avgSpeedKmh; }
     public void setAvgKmLMaf(double avgKmLMaf) { this.avgKmLMaf = avgKmLMaf; }
+    public void setSpeedStdDev(double speedStdDev) { this.speedStdDev = speedStdDev; }
+    public void setAvgRpm(double avgRpm) { this.avgRpm = avgRpm; }
+    public void setRpmStdDev(double rpmStdDev) { this.rpmStdDev = rpmStdDev; }
 
     // Formattazione date
     public String getStartTimeFormatted() {
