@@ -30,7 +30,8 @@ public class MainActivity extends AppCompatActivity {
     // Standard UUID for Serial Port Profile (SPP) - used by ELM327
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private static final int PERMISSION_REQUEST_CODE = 100;
-    private static final int READ_INTERVAL_MS = 1000; // polling interval
+    private static final int READ_INTERVAL_MS = 500; // polling interval
+    private static final int INITIAL_POLL_DELAY_MS = 2500; // delay before first poll after init
     private static final int MAX_LOG_LINES = 200;     // ~100 command/response exchanges
     private static final String PREFS_NAME = "OBDReaderPrefs";
     private static final String PREF_DEVICE_NAME = "selectedDeviceName";
@@ -240,6 +241,8 @@ public class MainActivity extends AppCompatActivity {
     private boolean shouldStayConnected = false; // Flag per riconnessione automatica
     private int consecutiveBTErrors = 0;
     private int consecutiveNoData = 0; // Contatore per risposte "NO DATA" dall'ECU
+    private int noDataGracePeriod = 0; // Tentativi iniziali post-connessione da non mostrare come "Engine off"
+    private static final int INITIAL_GRACE_PERIOD = 5; // Numero di NO DATA iniziali da ignorare silenziosamente
     private static final int MAX_BT_ERRORS_BEFORE_RECONNECT = 3;  // Max retry connessione BT prima di dare errore
     private static final int MAX_NO_DATA_BEFORE_RETRY = 3; // Max retry prima del re-init ECU
     private static final int MAX_NO_DATA_BEFORE_CLOSE_TRIP = 150; // Max retry prima di chiudere il viaggio
@@ -253,7 +256,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvRpm;
     private TextView tvInstantSpeed;
     private TextView tvTemp;
-    private TextView tvEngineLoad;
+    private TextView tvTripDuration;
     private TextView tvInstantFuelRate;
     private TextView tvInstantFuelFlow;
     private TextView tvTotalDistance;
@@ -273,13 +276,9 @@ public class MainActivity extends AppCompatActivity {
     private double totalFuelMafLiters = 0.0;
     private long lastUpdateTimeMs = 0;
 
-    // Accumulatori per deviazione standard velocità e RPM medio/std dev
-    private long   speedSampleCount = 0;
-    private double speedSampleSum   = 0.0;
-    private double speedSampleSumSq = 0.0;
-    private long   rpmSampleCount   = 0;
-    private double rpmSampleSum     = 0.0;
-    private double rpmSampleSumSq   = 0.0;
+    // Accumulatori per statistiche velocità e RPM
+    private long[] rpmBuckets   = new long[4]; // bucket counts for RPM
+    private long[] speedBuckets = new long[4]; // bucket counts for speed
 
     // Gestione log viaggi
     private TripLogManager tripLogManager;
@@ -350,7 +349,7 @@ public class MainActivity extends AppCompatActivity {
         tvStatus    = findViewById(R.id.tvStatus);
         tvRpm       = findViewById(R.id.tvRpm);
         tvInstantSpeed     = findViewById(R.id.tvSpeed);
-        tvEngineLoad = findViewById(R.id.tvEngineLoad);
+        tvTripDuration = findViewById(R.id.tvTripDuration);
         tvInstantFuelRate = findViewById(R.id.tvFuelRateInstantMaf);
         tvInstantFuelFlow = findViewById(R.id.tvFuelFlow);
         tvTotalDistance   = findViewById(R.id.tvTotalKm);
@@ -523,6 +522,7 @@ public class MainActivity extends AppCompatActivity {
                 isConnected = true;
                 consecutiveBTErrors = 0; // Reset contatore errori
                 consecutiveNoData = 0; // Reset contatore NO DATA
+                noDataGracePeriod = INITIAL_GRACE_PERIOD; // Reset grace period post-connessione
                 mainHandler.post(() -> {
                     showStatus("Connesso alla ECU");
                     showProgress(false);
@@ -875,9 +875,8 @@ public class MainActivity extends AppCompatActivity {
         if (currentTrip == null || totalDistanceKm == 0) {
             totalDistanceKm = 0.0;
             totalFuelMafLiters = 0.0;
-            speedSampleCount = 0; rpmSampleCount = 0;
-            speedSampleSum   = 0.0; speedSampleSumSq = 0.0;
-            rpmSampleSum     = 0.0; rpmSampleSumSq   = 0.0;
+            rpmBuckets   = new long[4];
+            speedBuckets = new long[4];
         }
         lastUpdateTimeMs = System.currentTimeMillis();
 
@@ -908,6 +907,7 @@ public class MainActivity extends AppCompatActivity {
                         // ECU not providing data (engine probably off)
                         consecutiveNoData++;
                         consecutiveBTErrors = 0; // Not a BT connection error
+                        if (noDataGracePeriod > 0) noDataGracePeriod--;
 
                         mainHandler.post(() -> {
                             if (consecutiveNoData >= MAX_NO_DATA_BEFORE_CLOSE_TRIP) {
@@ -945,7 +945,11 @@ public class MainActivity extends AppCompatActivity {
                                     if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
                                 }).start();
                             } else {
-                                showStatus("Engine off? Attempt " + consecutiveNoData + "/" + MAX_NO_DATA_BEFORE_CLOSE_TRIP);
+                                if (noDataGracePeriod > 0) {
+                                    showStatus("Lettura ECU in corso...");
+                                } else {
+                                    showStatus("Engine off? Attempt " + consecutiveNoData + "/" + MAX_NO_DATA_BEFORE_CLOSE_TRIP);
+                                }
                                 if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
                             }
                         });
@@ -993,7 +997,7 @@ public class MainActivity extends AppCompatActivity {
                 }).start();
             }
         };
-        mainHandler.post(pollingRunnable);
+        mainHandler.postDelayed(pollingRunnable, INITIAL_POLL_DELAY_MS);
     }
 
     private void stopPolling() {
@@ -1398,11 +1402,6 @@ public class MainActivity extends AppCompatActivity {
                 ? data.instantSpeed + " km/h"
                 : "N/A");
 
-        // Engine load (%)
-        tvEngineLoad.setText(data.engineLoad >= 0
-                ? data.engineLoad + " %"
-                : "N/A");
-
         // Display instantaneous km/L
         tvInstantFuelRate.setText(calc.instantFuelRate > 0
                 ? String.format(java.util.Locale.US, "%.2f", calc.instantFuelRate)
@@ -1431,6 +1430,11 @@ public class MainActivity extends AppCompatActivity {
             tvAvgFuelRate.setText(String.format(java.util.Locale.US, "%.2f", calc.avgFuelRate));
         } else {
             tvAvgFuelRate.setText("--");
+        }
+
+        // Trip duration
+        if (currentTrip != null) {
+            tvTripDuration.setText(currentTrip.getDuration());
         }
     }
 
@@ -1471,15 +1475,11 @@ public class MainActivity extends AppCompatActivity {
 
         // Accumulate speed samples (only when moving)
         if (data.instantSpeed >= 0) {
-            speedSampleCount++;
-            speedSampleSum   += data.instantSpeed;
-            speedSampleSumSq += (double) data.instantSpeed * data.instantSpeed;
+            speedBuckets[BucketDefs.speedBucket(data.instantSpeed)]++;
         }
         // Accumulate RPM samples
         if (data.rpm >= 0) {
-            rpmSampleCount++;
-            rpmSampleSum   += data.rpm;
-            rpmSampleSumSq += (double) data.rpm * data.rpm;
+            rpmBuckets[BucketDefs.rpmBucket(data.rpm, fuelType)]++;
         }
 
         calc.totalDistance = totalDistanceKm;
@@ -1487,21 +1487,9 @@ public class MainActivity extends AppCompatActivity {
         calc.avgSpeed = calculateAverageSpeed();
         calc.avgFuelRate = calculateAverageFuelConsumption();
 
-        // Speed std dev
-        if (speedSampleCount > 1) {
-            double mean = speedSampleSum / speedSampleCount;
-            double variance = (speedSampleSumSq / speedSampleCount) - (mean * mean);
-            calc.speedStdDev = Math.sqrt(Math.max(0.0, variance));
-        }
-        // Avg RPM and RPM std dev
-        if (rpmSampleCount > 0) {
-            calc.avgRpm = rpmSampleSum / rpmSampleCount;
-        }
-        if (rpmSampleCount > 1) {
-            double meanRpm = rpmSampleSum / rpmSampleCount;
-            double varianceRpm = (rpmSampleSumSq / rpmSampleCount) - (meanRpm * meanRpm);
-            calc.rpmStdDev = Math.sqrt(Math.max(0.0, varianceRpm));
-        }
+        calc.fuelType    = fuelType;
+        calc.rpmBuckets  = rpmBuckets.clone();
+        calc.speedBuckets = speedBuckets.clone();
 
         return calc;
     }
@@ -1575,7 +1563,6 @@ public class MainActivity extends AppCompatActivity {
         tvElmVersion.setText("ELM327: -- | Protocol: --");
         tvRpm.setText("--");
         tvInstantSpeed.setText("--");
-        tvEngineLoad.setText("--");
         tvInstantFuelRate.setText("--");
         tvInstantFuelFlow.setText("--");
         tvTotalDistance.setText("--");
@@ -1624,9 +1611,9 @@ public class MainActivity extends AppCompatActivity {
         double totalFuelMafLiters = 0.0;
         double avgSpeed = 0.0;
         double avgFuelRate = 0.0;
-        double speedStdDev = 0.0;
-        double avgRpm = 0.0;
-        double rpmStdDev = 0.0;
+        int fuelType = FUEL_DIESEL;
+        long[] rpmBuckets   = new long[4];
+        long[] speedBuckets = new long[4];
     }
 
 

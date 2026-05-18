@@ -110,22 +110,36 @@ public class TripHistoryActivity extends AppCompatActivity {
         File csvFile = new File(getCacheDir(), "viaggi_" + timestamp + ".csv");
 
         try (FileWriter writer = new FileWriter(csvFile)) {
-            // Header
-            writer.write("Start,End,Duration,Distance_km,AvgSpeed_kmh,SpeedStdDev_kmh," +
-                         "AvgKmL_MAF,AvgRPM,RPMStdDev\n");
+            // Header — colonne bucket derivate da BucketDefs per coerenza con UI
+            int fuelTypeForHeader = trips.isEmpty() ? MainActivity.FUEL_DIESEL : trips.get(0).getFuelType();
+            writer.write("Start,End,Duration,Distance_km,AvgSpeed_kmh,"
+                    + BucketDefs.speedCsvHeader() + ","
+                    + "AvgKmL_MAF,FuelType,"
+                    + BucketDefs.rpmCsvHeader(fuelTypeForHeader) + "\n");
 
             for (TripLog t : trips) {
+                long[] sb = t.getSpeedBuckets();
+                long stotal = sb[0] + sb[1] + sb[2] + sb[3];
+                long[] rb = t.getRpmBuckets();
+                long rtotal = rb[0] + rb[1] + rb[2] + rb[3];
+                String fuelLabel = (t.getFuelType() == 0) ? "Diesel" : "Benzina";
                 writer.write(String.format(Locale.US,
-                        "%s,%s,%s,%.2f,%.1f,%.1f,%.2f,%.0f,%.0f\n",
+                        "%s,%s,%s,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.2f,%s,%.1f,%.1f,%.1f,%.1f\n",
                         t.getStartTimeFormatted(),
                         t.getEndTimeFormatted(),
                         t.getDuration(),
                         t.getTotalKm(),
                         t.getAvgSpeedKmh(),
-                        t.getSpeedStdDev(),
+                        stotal > 0 ? 100.0 * sb[0] / stotal : 0.0,
+                        stotal > 0 ? 100.0 * sb[1] / stotal : 0.0,
+                        stotal > 0 ? 100.0 * sb[2] / stotal : 0.0,
+                        stotal > 0 ? 100.0 * sb[3] / stotal : 0.0,
                         t.getAvgKmLMaf(),
-                        t.getAvgRpm(),
-                        t.getRpmStdDev()));
+                        fuelLabel,
+                        rtotal > 0 ? 100.0 * rb[0] / rtotal : 0.0,
+                        rtotal > 0 ? 100.0 * rb[1] / rtotal : 0.0,
+                        rtotal > 0 ? 100.0 * rb[2] / rtotal : 0.0,
+                        rtotal > 0 ? 100.0 * rb[3] / rtotal : 0.0));
             }
         }
         return csvFile;
@@ -203,12 +217,12 @@ public class TripHistoryActivity extends AppCompatActivity {
         tvSpeed.setTextColor(0xFFD0D0D0);
         container.addView(tvSpeed);
 
-        // Speed std dev
-        TextView tvSpeedStd = new TextView(this);
-        tvSpeedStd.setText(String.format(Locale.US, "Speed std dev: %.1f km/h", trip.getSpeedStdDev()));
-        tvSpeedStd.setTextSize(14);
-        tvSpeedStd.setTextColor(0xFFD0D0D0);
-        container.addView(tvSpeedStd);
+        // Speed buckets
+        TextView tvSpeedBuckets = new TextView(this);
+        tvSpeedBuckets.setText(BucketDefs.formatSpeed(trip.getSpeedBuckets()));
+        tvSpeedBuckets.setTextSize(13);
+        tvSpeedBuckets.setTextColor(0xFFB0B0B0);
+        container.addView(tvSpeedBuckets);
 
         // Average km/L MAF
         TextView tvKmLMaf = new TextView(this);
@@ -217,19 +231,12 @@ public class TripHistoryActivity extends AppCompatActivity {
         tvKmLMaf.setTextColor(0xFF81C784);
         container.addView(tvKmLMaf);
 
-        // Avg RPM
-        TextView tvAvgRpm = new TextView(this);
-        tvAvgRpm.setText(String.format(Locale.US, "Avg RPM: %.0f", trip.getAvgRpm()));
-        tvAvgRpm.setTextSize(14);
-        tvAvgRpm.setTextColor(0xFFD0D0D0);
-        container.addView(tvAvgRpm);
-
-        // RPM std dev
-        TextView tvRpmStd = new TextView(this);
-        tvRpmStd.setText(String.format(Locale.US, "RPM std dev: %.0f", trip.getRpmStdDev()));
-        tvRpmStd.setTextSize(14);
-        tvRpmStd.setTextColor(0xFFD0D0D0);
-        container.addView(tvRpmStd);
+        // RPM buckets (fuel-type aware)
+        TextView tvRpmBuckets = new TextView(this);
+        tvRpmBuckets.setText(BucketDefs.formatRpm(trip.getRpmBuckets(), trip.getFuelType()));
+        tvRpmBuckets.setTextSize(13);
+        tvRpmBuckets.setTextColor(0xFFB0B0B0);
+        container.addView(tvRpmBuckets);
 
 
         // Long click to delete

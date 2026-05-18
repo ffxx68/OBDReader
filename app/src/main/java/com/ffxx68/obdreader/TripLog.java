@@ -15,9 +15,9 @@ public class TripLog {
     private double totalKm;
     private double avgSpeedKmh;
     private double avgKmLMaf;
-    private double speedStdDev;
-    private double avgRpm;
-    private double rpmStdDev;
+    private int fuelType = 0;
+    private long[] rpmBuckets   = new long[4];
+    private long[] speedBuckets = new long[4];
 
     public TripLog() {
         this.startTime = System.currentTimeMillis();
@@ -47,9 +47,9 @@ public class TripLog {
             this.totalKm = calc.totalDistance;
             this.avgSpeedKmh = calc.avgSpeed;
             this.avgKmLMaf = calc.avgFuelRate;
-            this.speedStdDev = calc.speedStdDev;
-            this.avgRpm = calc.avgRpm;
-            this.rpmStdDev = calc.rpmStdDev;
+            this.fuelType = calc.fuelType;
+            this.rpmBuckets   = calc.rpmBuckets != null ? calc.rpmBuckets.clone() : new long[4];
+            this.speedBuckets = calc.speedBuckets != null ? calc.speedBuckets.clone() : new long[4];
         }
     }
 
@@ -66,9 +66,9 @@ public class TripLog {
     public double getTotalKm() { return totalKm; }
     public double getAvgSpeedKmh() { return avgSpeedKmh; }
     public double getAvgKmLMaf() { return avgKmLMaf; }
-    public double getSpeedStdDev() { return speedStdDev; }
-    public double getAvgRpm() { return avgRpm; }
-    public double getRpmStdDev() { return rpmStdDev; }
+    public int getFuelType() { return fuelType; }
+    public long[] getRpmBuckets()   { return rpmBuckets   != null ? rpmBuckets   : new long[4]; }
+    public long[] getSpeedBuckets() { return speedBuckets != null ? speedBuckets : new long[4]; }
 
     // Setters
     public void setStartTime(long startTime) { this.startTime = startTime; }
@@ -76,9 +76,9 @@ public class TripLog {
     public void setTotalKm(double totalKm) { this.totalKm = totalKm; }
     public void setAvgSpeedKmh(double avgSpeedKmh) { this.avgSpeedKmh = avgSpeedKmh; }
     public void setAvgKmLMaf(double avgKmLMaf) { this.avgKmLMaf = avgKmLMaf; }
-    public void setSpeedStdDev(double speedStdDev) { this.speedStdDev = speedStdDev; }
-    public void setAvgRpm(double avgRpm) { this.avgRpm = avgRpm; }
-    public void setRpmStdDev(double rpmStdDev) { this.rpmStdDev = rpmStdDev; }
+    public void setFuelType(int fuelType) { this.fuelType = fuelType; }
+    public void setRpmBuckets(long[] rpmBuckets) { this.rpmBuckets = rpmBuckets != null ? rpmBuckets.clone() : new long[4]; }
+    public void setSpeedBuckets(long[] speedBuckets) { this.speedBuckets = speedBuckets != null ? speedBuckets.clone() : new long[4]; }
 
     // Formattazione date
     public String getStartTimeFormatted() {
@@ -95,12 +95,16 @@ public class TripLog {
     }
 
     public String getDuration() {
-        if (endTime <= 0) return "In corso...";
-        long durationMs = endTime - startTime;
+        long end = (endTime > 0) ? endTime : System.currentTimeMillis();
+        long durationMs = end - startTime;
         long hours = durationMs / 3600000;
         long minutes = (durationMs % 3600000) / 60000;
-        long seconds = (durationMs % 60000) / 1000;
-        return String.format(Locale.getDefault(), "%02d:%02d:%02d", hours, minutes, seconds);
+        String suffix = (endTime <= 0) ? " *" : "";
+        if (hours > 0) {
+            return String.format(Locale.getDefault(), "%d h %02d min%s", hours, minutes, suffix);
+        } else {
+            return String.format(Locale.getDefault(), "%d min%s", minutes, suffix);
+        }
     }
 }
 
