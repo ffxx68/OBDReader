@@ -115,7 +115,8 @@ public class TripHistoryActivity extends AppCompatActivity {
             writer.write("Start,End,Duration,Distance_km,AvgSpeed_kmh,"
                     + BucketDefs.speedCsvHeader() + ","
                     + "AvgKmL_MAF,FuelType,"
-                    + BucketDefs.rpmCsvHeader(fuelTypeForHeader) + "\n");
+                    + BucketDefs.rpmCsvHeader(fuelTypeForHeader)
+                    + ",SessionId,Segment\n");
 
             for (TripLog t : trips) {
                 long[] sb = t.getSpeedBuckets();
@@ -124,7 +125,7 @@ public class TripHistoryActivity extends AppCompatActivity {
                 long rtotal = rb[0] + rb[1] + rb[2] + rb[3];
                 String fuelLabel = (t.getFuelType() == 0) ? "Diesel" : "Benzina";
                 writer.write(String.format(Locale.US,
-                        "%s,%s,%s,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.2f,%s,%.1f,%.1f,%.1f,%.1f\n",
+                        "%s,%s,%s,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.2f,%s,%.1f,%.1f,%.1f,%.1f,%s,%d\n",
                         t.getStartTimeFormatted(),
                         t.getEndTimeFormatted(),
                         t.getDuration(),
@@ -139,7 +140,9 @@ public class TripHistoryActivity extends AppCompatActivity {
                         rtotal > 0 ? 100.0 * rb[0] / rtotal : 0.0,
                         rtotal > 0 ? 100.0 * rb[1] / rtotal : 0.0,
                         rtotal > 0 ? 100.0 * rb[2] / rtotal : 0.0,
-                        rtotal > 0 ? 100.0 * rb[3] / rtotal : 0.0));
+                        rtotal > 0 ? 100.0 * rb[3] / rtotal : 0.0,
+                        t.getSessionId(),
+                        t.getSegmentIndex()));
             }
         }
         return csvFile;
@@ -237,6 +240,17 @@ public class TripHistoryActivity extends AppCompatActivity {
         tvRpmBuckets.setTextSize(13);
         tvRpmBuckets.setTextColor(0xFFB0B0B0);
         container.addView(tvRpmBuckets);
+
+        // Session ID + segment
+        String sessionShort = trip.getSessionId().length() >= 8
+                ? trip.getSessionId().substring(0, 8) : trip.getSessionId();
+        TextView tvSession = new TextView(this);
+        tvSession.setText(String.format(Locale.US, "Session: %s… · seg %d",
+                sessionShort, trip.getSegmentIndex()));
+        tvSession.setTextSize(11);
+        tvSession.setTextColor(0xFF607D8B);
+        tvSession.setPadding(0, 4, 0, 0);
+        container.addView(tvSession);
 
 
         // Long click to delete

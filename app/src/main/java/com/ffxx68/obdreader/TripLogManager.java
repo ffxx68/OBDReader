@@ -78,6 +78,20 @@ public class TripLogManager {
     }
 
     /**
+     * Ritorna tutti i segmenti appartenenti alla stessa sessione di connessione.
+     */
+    public List<TripLog> getSessionTrips(String sessionId) {
+        List<TripLog> result = new java.util.ArrayList<>();
+        if (sessionId == null) return result;
+        for (TripLog t : getAllTrips()) {
+            if (sessionId.equals(t.getSessionId())) {
+                result.add(t);
+            }
+        }
+        return result;
+    }
+
+    /**
      * Deletes a specific trip
      */
     public void deleteTrip(int position) {

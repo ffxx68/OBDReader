@@ -250,6 +250,12 @@ public class MainActivity extends AppCompatActivity {
     // Handler per aggiornamenti UI dal thread BT
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Runnable pollingRunnable;
+    private Runnable segmentRunnable;
+
+    // Sessione di connessione corrente
+    private String currentSessionId = null;
+    private int currentSegmentIndex = 0;
+    private static final long SEGMENT_INTERVAL_MS = 15 * 60 * 1000L; // 15 minuti
 
     // UI Elements
     private TextView tvStatus;
@@ -440,8 +446,11 @@ public class MainActivity extends AppCompatActivity {
         // Avvia polling mock
         startPolling();
         if (currentTrip == null) {
-            currentTrip = new TripLog();
+            currentSessionId = java.util.UUID.randomUUID().toString();
+            currentSegmentIndex = 0;
+            currentTrip = TripLog.startSegment(currentSessionId, currentSegmentIndex);
             tripLogManager.saveTrip(currentTrip);
+            startSegmentTimer();
         }
     }
 
@@ -532,8 +541,11 @@ public class MainActivity extends AppCompatActivity {
                     startPolling();
                     // Crea il record del viaggio alla connessione SOLO se non esiste già (prima connessione)
                     if (currentTrip == null) {
-                        currentTrip = new TripLog();
+                        currentSessionId = java.util.UUID.randomUUID().toString();
+                        currentSegmentIndex = 0;
+                        currentTrip = TripLog.startSegment(currentSessionId, currentSegmentIndex);
                         tripLogManager.saveTrip(currentTrip);
+                        startSegmentTimer();
                     }
                 });
 
@@ -1003,8 +1015,51 @@ public class MainActivity extends AppCompatActivity {
     private void stopPolling() {
         isPolling = false;
         if (pollingRunnable != null) mainHandler.removeCallbacks(pollingRunnable);
+        stopSegmentTimer();
         // Aggiorna viaggio se necessario
         updateCurrentTrip(null);
+    }
+
+    private void startSegmentTimer() {
+        stopSegmentTimer();
+        segmentRunnable = new Runnable() {
+            @Override
+            public void run() {
+                rotateSegment();
+                mainHandler.postDelayed(this, SEGMENT_INTERVAL_MS);
+            }
+        };
+        mainHandler.postDelayed(segmentRunnable, SEGMENT_INTERVAL_MS);
+    }
+
+    private void stopSegmentTimer() {
+        if (segmentRunnable != null) {
+            mainHandler.removeCallbacks(segmentRunnable);
+            segmentRunnable = null;
+        }
+    }
+
+    /**
+     * Chiude il segmento corrente e ne apre uno nuovo con lo stesso sessionId.
+     */
+    private void rotateSegment() {
+        if (currentTrip == null || currentSessionId == null) return;
+
+        // Chiudi il segmento corrente
+        currentTrip.endTrip(totalDistanceKm, calculateAverageSpeed(), calculateAverageFuelConsumption());
+        tripLogManager.updateCurrentTrip(currentTrip);
+
+        // Reset statistiche per il nuovo segmento
+        totalDistanceKm = 0.0;
+        totalFuelMafLiters = 0.0;
+        rpmBuckets   = new long[4];
+        speedBuckets = new long[4];
+        lastUpdateTimeMs = System.currentTimeMillis();
+
+        // Nuovo segmento nella stessa sessione
+        currentSegmentIndex++;
+        currentTrip = TripLog.startSegment(currentSessionId, currentSegmentIndex);
+        tripLogManager.saveTrip(currentTrip);
     }
 
     /**
@@ -1549,8 +1604,10 @@ public class MainActivity extends AppCompatActivity {
         if (currentTrip != null && totalDistanceKm > 0.01) {
             currentTrip.endTrip(totalDistanceKm, calculateAverageSpeed(), calculateAverageFuelConsumption());
             tripLogManager.updateCurrentTrip(currentTrip);
-            currentTrip = null;
         }
+        currentTrip = null;
+        currentSessionId = null;
+        currentSegmentIndex = 0;
 
         isConnected = false;
         consecutiveBTErrors = 0;

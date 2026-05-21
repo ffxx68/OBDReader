@@ -5,6 +5,7 @@ import com.ffxx68.obdreader.MainActivity.CalculatedData;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.UUID;
 
 /**
  * Classe che rappresenta un singolo viaggio registrato
@@ -18,9 +19,13 @@ public class TripLog {
     private int fuelType = 0;
     private long[] rpmBuckets   = new long[4];
     private long[] speedBuckets = new long[4];
+    private String sessionId;
+    private int segmentIndex;
 
     public TripLog() {
         this.startTime = System.currentTimeMillis();
+        this.sessionId = UUID.randomUUID().toString();
+        this.segmentIndex = 0;
     }
 
     public TripLog(long startTime, long endTime, double totalKm, double avgSpeedKmh,
@@ -79,6 +84,20 @@ public class TripLog {
     public void setFuelType(int fuelType) { this.fuelType = fuelType; }
     public void setRpmBuckets(long[] rpmBuckets) { this.rpmBuckets = rpmBuckets != null ? rpmBuckets.clone() : new long[4]; }
     public void setSpeedBuckets(long[] speedBuckets) { this.speedBuckets = speedBuckets != null ? speedBuckets.clone() : new long[4]; }
+    public String getSessionId() { return sessionId != null ? sessionId : "legacy"; }
+    public void setSessionId(String sessionId) { this.sessionId = sessionId; }
+    public int getSegmentIndex() { return segmentIndex; }
+    public void setSegmentIndex(int segmentIndex) { this.segmentIndex = segmentIndex; }
+
+    /**
+     * Crea un nuovo segmento nella stessa sessione di connessione.
+     */
+    public static TripLog startSegment(String sessionId, int segmentIndex) {
+        TripLog seg = new TripLog();
+        seg.sessionId = sessionId;
+        seg.segmentIndex = segmentIndex;
+        return seg;
+    }
 
     // Formattazione date
     public String getStartTimeFormatted() {
