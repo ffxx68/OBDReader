@@ -533,7 +533,7 @@ public class MainActivity extends AppCompatActivity {
                 consecutiveNoData = 0; // Reset contatore NO DATA
                 noDataGracePeriod = INITIAL_GRACE_PERIOD; // Reset grace period post-connessione
                 mainHandler.post(() -> {
-                    showStatus("Connesso alla ECU");
+                    showStatus("Connesso a: " + device.getName());
                     showProgress(false);
                     btnConnect.setEnabled(false);
                     btnDisconnect.setEnabled(true);
@@ -553,8 +553,7 @@ public class MainActivity extends AppCompatActivity {
                 // BT connesso ma la ECU non risponde
                 isConnected = true; // rimane connesso al BT
                 mainHandler.post(() -> {
-                    showStatus("Connesso a: " + device.getName()
-                            + "\nErrore comunicazione ECU: " + e.getMessage()
+                    showStatus( "Errore comunicazione ECU: " + e.getMessage()
                             + "\nVerifica protocollo o chiave in posizione ON.");
                     showProgress(false);
                     btnConnect.setEnabled(false);
@@ -908,9 +907,11 @@ public class MainActivity extends AppCompatActivity {
                         OBDData data = fetchOBDData();
                         CalculatedData calc = calculateDerivedData(data);
                         updateCurrentTrip(calc);
+                        boolean wasWaitingForEngine = consecutiveNoData > 0;
                         consecutiveBTErrors = 0;
                         consecutiveNoData = 0;
                         mainHandler.post(() -> {
+                            if (wasWaitingForEngine) showStatus("ECU connected. Reading data...");
                             updateUI(data, calc);
                             if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
                         });
@@ -936,23 +937,23 @@ public class MainActivity extends AppCompatActivity {
                                 stopPolling();
                                 if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
 
-                            } else if (consecutiveNoData == MAX_NO_DATA_BEFORE_RETRY && shouldStayConnected) {
-                                // Try to re-initialize ECU (only on exact MAX_NO_DATA_BEFORE_RETRY)
+                            } else if (consecutiveNoData % MAX_NO_DATA_BEFORE_RETRY == 0 && shouldStayConnected) {
+                                // Try to re-initialize ECU (every MAX_NO_DATA_BEFORE_RETRY attempts)
                                 showStatus("ECU not responding. Waiting for engine restart... (" + consecutiveNoData + ")");
 
                                 // Try to re-initialize ELM327/ECU
                                 new Thread(() -> {
                                     try {
                                         initElm327();
-                                        mainHandler.post(() -> {
-                                            consecutiveNoData = 0; // Reset in UI thread to avoid race conditions
-                                            showStatus("ECU detected! Resuming data reading.");
-                                        });
+                                        // Do NOT reset consecutiveNoData here: only actual data from fetchOBDData() should reset it.
+                                        // This avoids an infinite loop where initElm327 succeeds (ELM responds to AT)
+                                        // but the engine is still off, causing 0→1→2→3→reinit→0→... forever.
+                                        mainHandler.post(() -> showStatus("ECU init OK. Waiting for engine data..."));
                                     } catch (Exception initError) {
                                         // Re-init failed, keep waiting
-                                        mainHandler.post(() -> {
-                                            showStatus("Engine off. Waiting... (" + consecutiveNoData + "/" + MAX_NO_DATA_BEFORE_CLOSE_TRIP + ")");
-                                        });
+                                        mainHandler.post(() ->
+                                            showStatus("Engine off. Waiting... (" + consecutiveNoData + "/" + MAX_NO_DATA_BEFORE_CLOSE_TRIP + ")")
+                                        );
                                     }
                                     if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
                                 }).start();
