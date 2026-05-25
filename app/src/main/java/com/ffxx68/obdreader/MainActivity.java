@@ -19,7 +19,6 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -30,7 +29,7 @@ public class MainActivity extends AppCompatActivity {
     // Standard UUID for Serial Port Profile (SPP) - used by ELM327
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private static final int PERMISSION_REQUEST_CODE = 100;
-    private static final int READ_INTERVAL_MS = 500; // polling interval
+    private static final int READ_INTERVAL_MS = 500; // polling delay
     private static final int INITIAL_POLL_DELAY_MS = 2500; // delay before first poll after init
     private static final int MAX_LOG_LINES = 200;     // ~100 command/response exchanges
     private static final String PREFS_NAME = "OBDReaderPrefs";
@@ -277,29 +276,32 @@ public class MainActivity extends AppCompatActivity {
     private ProgressBar progressBar;
     private ImageButton btnSettings;
 
-    // Statistiche di viaggio
+    // Trip statistics accumulators
+    // 1) fixed-time segments
+    private double segmentDistanceKm = 0.0;
+    private double segmentFuelMafLiters = 0.0;
+    // 2) overall trip (i.e. connection session)
     private double totalDistanceKm = 0.0;
     private double totalFuelMafLiters = 0.0;
+
     private long lastUpdateTimeMs = 0;
 
-    // Accumulatori per statistiche velocità e RPM
+    // segment statistics wrt to speed and RPM buckets
     private long[] rpmBuckets   = new long[4]; // bucket counts for RPM
     private long[] speedBuckets = new long[4]; // bucket counts for speed
 
-    // Gestione log viaggi
+    // trip log manager
     private TripLogManager tripLogManager;
     private TripLog currentTrip;
 
-    // Lista dei PID supportati dalla modalità 01
-    // Supporta fino a PID 0xE0 (224) tramite query multiple (0100, 0120, 0140, ecc.)
+    // mode-01 ECU Supported PIDs
     private Set<Integer> supportedPids = new HashSet<>();
 
     // Tipo carburante selezionato dall'utente (FUEL_DIESEL / FUEL_PETROL)
     private int fuelType = FUEL_DIESEL;
 
-    // Flag per abilitare la modalità mock solo su emulatore
+    // Emulator mode
     private boolean useMockData = false;
-
     // --- MOCK ERROR SIMULATION ---
     private static int mockReadCount = 0;
 
@@ -448,13 +450,13 @@ public class MainActivity extends AppCompatActivity {
         if (currentTrip == null) {
             currentSessionId = java.util.UUID.randomUUID().toString();
             currentSegmentIndex = 0;
-            currentTrip = TripLog.startSegment(currentSessionId, currentSegmentIndex);
+            currentTrip = TripLog.startSegment (currentSessionId, currentSegmentIndex, null);
             tripLogManager.saveTrip(currentTrip);
             startSegmentTimer();
         }
     }
 
-    // Mock: dati OBD
+    // Mock OBD data (random!)
     private OBDData fetchOBDDataMock() {
         OBDData data = new OBDData();
         data.rpm = 900 + (int)(Math.random()*200);
@@ -543,7 +545,7 @@ public class MainActivity extends AppCompatActivity {
                     if (currentTrip == null) {
                         currentSessionId = java.util.UUID.randomUUID().toString();
                         currentSegmentIndex = 0;
-                        currentTrip = TripLog.startSegment(currentSessionId, currentSegmentIndex);
+                        currentTrip = TripLog.startSegment(currentSessionId, currentSegmentIndex, null);
                         tripLogManager.saveTrip(currentTrip);
                         startSegmentTimer();
                     }
@@ -875,6 +877,7 @@ public class MainActivity extends AppCompatActivity {
         return sendCommand(command, 100);
     }
 
+
     // ─── DATA READING ────────────────────────────────────────────────────
 
     private void startPolling() {
@@ -883,9 +886,13 @@ public class MainActivity extends AppCompatActivity {
         isPolling = true;
 
         // Reset trip statistics ONLY if it's a new connection (not a reconnection)
-        if (currentTrip == null || totalDistanceKm == 0) {
+        if (currentTrip == null || segmentDistanceKm == 0) {
+            // new 'trip' started, reset total accumulators
             totalDistanceKm = 0.0;
             totalFuelMafLiters = 0.0;
+            // new 'segment' started as well, reset segment accumulators
+            segmentDistanceKm = 0.0;
+            segmentFuelMafLiters = 0.0;
             rpmBuckets   = new long[4];
             speedBuckets = new long[4];
         }
@@ -922,14 +929,17 @@ public class MainActivity extends AppCompatActivity {
                         consecutiveBTErrors = 0; // Not a BT connection error
                         if (noDataGracePeriod > 0) noDataGracePeriod--;
 
+                        // stop segment timer to avoid rotating segments while waiting for engine restart
+                        stopSegmentTimer();
+
                         mainHandler.post(() -> {
                             if (consecutiveNoData >= MAX_NO_DATA_BEFORE_CLOSE_TRIP) {
                                 // Engine off too long: close trip
                                 showStatus("Engine off. Closing trip...");
 
-                                // Close trip if active
-                                if (currentTrip != null && totalDistanceKm > 0.01) {
-                                    currentTrip.endTrip(totalDistanceKm, calculateAverageSpeed(), calculateAverageFuelConsumption());
+                                // Close trip, if active
+                                if (currentTrip != null && segmentDistanceKm > 0.01) {
+                                    currentTrip.endSegment(segmentDistanceKm, calculateSegmentSpeed(), calculateSegmentFuelConsumption());
                                     tripLogManager.updateCurrentTrip(currentTrip);
                                     currentTrip = null;
                                 }
@@ -993,8 +1003,9 @@ public class MainActivity extends AppCompatActivity {
                                 stopPolling();
 
                                 // Close trip if active
-                                if (currentTrip != null && totalDistanceKm > 0.01) {
-                                    currentTrip.endTrip(totalDistanceKm, calculateAverageSpeed(), calculateAverageFuelConsumption());
+                                if (currentTrip != null && segmentDistanceKm > 0.01) {
+                                    currentTrip.endTrip(segmentDistanceKm, calculateSegmentSpeed(), calculateSegmentFuelConsumption(),
+                                            totalDistanceKm, calculateAverageSpeed(), calculateAverageFuelConsumption());
                                     tripLogManager.updateCurrentTrip(currentTrip);
                                     currentTrip = null;
                                 }
@@ -1002,6 +1013,8 @@ public class MainActivity extends AppCompatActivity {
                         });
                     } catch (Exception e) {
                         CommunicationLogActivity.logCriticalError("Polling thread", e);
+                        stopPolling();
+
                         mainHandler.post(() -> {
                             showStatus("Errore imprevisto: " + e.getMessage());
                             if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
@@ -1047,19 +1060,19 @@ public class MainActivity extends AppCompatActivity {
         if (currentTrip == null || currentSessionId == null) return;
 
         // Chiudi il segmento corrente
-        currentTrip.endTrip(totalDistanceKm, calculateAverageSpeed(), calculateAverageFuelConsumption());
+        currentTrip.endSegment(segmentDistanceKm, calculateSegmentSpeed(), calculateSegmentFuelConsumption());
         tripLogManager.updateCurrentTrip(currentTrip);
 
         // Reset statistiche per il nuovo segmento
-        totalDistanceKm = 0.0;
-        totalFuelMafLiters = 0.0;
+        segmentDistanceKm = 0.0;
+        segmentFuelMafLiters = 0.0;
         rpmBuckets   = new long[4];
         speedBuckets = new long[4];
         lastUpdateTimeMs = System.currentTimeMillis();
 
         // Nuovo segmento nella stessa sessione
         currentSegmentIndex++;
-        currentTrip = TripLog.startSegment(currentSessionId, currentSegmentIndex);
+        currentTrip = TripLog.startSegment(currentSessionId, currentSegmentIndex, (currentTrip != null ? currentTrip.getStartTime() : null));
         tripLogManager.saveTrip(currentTrip);
     }
 
@@ -1469,28 +1482,28 @@ public class MainActivity extends AppCompatActivity {
                 : "N/A");
 
         // Display traveled km
-        tvTotalDistance.setText(String.format(java.util.Locale.US, "%.2f", calc.totalDistance));
+        tvTotalDistance.setText(String.format(java.util.Locale.US, "%.2f", totalDistanceKm));
 
         // Display total fuel consumed in liters (Maf-based)
-        tvTotLiters.setText(String.format(java.util.Locale.US, "%.2f", calc.totalFuelMafLiters));
+        tvTotLiters.setText(String.format(java.util.Locale.US, "%.2f", totalFuelMafLiters));
 
         // Average speed
-        if (calc.avgSpeed > 0) {
-            tvAvgSpeed.setText(String.format(java.util.Locale.US, "%.1f km/h", calc.avgSpeed));
+        if (calc.averageSpeed > 0) {
+            tvAvgSpeed.setText(String.format(java.util.Locale.US, "%.1f km/h", calc.averageSpeed));
         } else {
             tvAvgSpeed.setText("--");
         }
 
         // Average km/L
-        if (calc.avgFuelRate > 0) {
-            tvAvgFuelRate.setText(String.format(java.util.Locale.US, "%.2f", calc.avgFuelRate));
+        if (calc.averageFuelRate > 0) {
+            tvAvgFuelRate.setText(String.format(java.util.Locale.US, "%.2f", calc.averageFuelRate));
         } else {
             tvAvgFuelRate.setText("--");
         }
 
         // Trip duration
         if (currentTrip != null) {
-            tvTripDuration.setText(currentTrip.getDuration());
+            tvTripDuration.setText(currentTrip.getTripDuration());
         }
     }
 
@@ -1521,8 +1534,10 @@ public class MainActivity extends AppCompatActivity {
             if (lastUpdateTimeMs > 0) {
                 double elapsedHours = (currentTimeMs - lastUpdateTimeMs) / 3600000.0; // ms to hours
                 double distanceKm = data.instantSpeed * elapsedHours;
+                segmentDistanceKm += distanceKm;
                 totalDistanceKm += distanceKm;
                 if (calc.InstantFuelFlow > 0) {
+                    segmentFuelMafLiters += calc.InstantFuelFlow * elapsedHours;
                     totalFuelMafLiters += calc.InstantFuelFlow * elapsedHours;
                 }
             }
@@ -1538,10 +1553,17 @@ public class MainActivity extends AppCompatActivity {
             rpmBuckets[BucketDefs.rpmBucket(data.rpm, fuelType)]++;
         }
 
+        // per segment
+        calc.segmentDistance = segmentDistanceKm;
+        calc.segmentFuelMafLiters = segmentFuelMafLiters;
+        calc.segmentAvgSpeed = calculateSegmentSpeed();
+        calc.segmentFuelRate = calculateSegmentFuelConsumption();
+
+        // overall trip
         calc.totalDistance = totalDistanceKm;
         calc.totalFuelMafLiters = totalFuelMafLiters;
-        calc.avgSpeed = calculateAverageSpeed();
-        calc.avgFuelRate = calculateAverageFuelConsumption();
+        calc.averageSpeed = calculateAverageSpeed();
+        calc.averageFuelRate = calculateAverageFuelConsumption();
 
         calc.fuelType    = fuelType;
         calc.rpmBuckets  = rpmBuckets.clone();
@@ -1563,6 +1585,15 @@ public class MainActivity extends AppCompatActivity {
      * Calculates average speed as total km / total time in hours
      * @return average speed in km/h, or 0.0 if not calculable
      */
+    private double calculateSegmentSpeed() {
+        if (currentTrip == null || segmentDistanceKm <= 0.01) {
+            return 0.0;
+        }
+        long elapsedTimeMs = System.currentTimeMillis() - currentTrip.getSegmentStartTime();
+        double elapsedTimeHours = elapsedTimeMs / 3600000.0;
+        return elapsedTimeHours > 0.001 ? segmentDistanceKm / elapsedTimeHours : 0.0;
+    }
+
     private double calculateAverageSpeed() {
         if (currentTrip == null || totalDistanceKm <= 0.01) {
             return 0.0;
@@ -1574,19 +1605,31 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * Calculates average consumption as total km / total liters
+     * for the current trip segment
+     * @return average consumption in km/L, or 0.0 if not calculable
+     */
+    private double calculateSegmentFuelConsumption() {
+        return (segmentDistanceKm > 0.01 && segmentFuelMafLiters > 0)
+            ? segmentDistanceKm / segmentFuelMafLiters
+            : 0.0;
+    }
+
+    /**
+     * Calculates average consumption as total km / total liters
+     * for the overall trip (per connection session)
      * @return average consumption in km/L, or 0.0 if not calculable
      */
     private double calculateAverageFuelConsumption() {
         return (totalDistanceKm > 0.01 && totalFuelMafLiters > 0)
-            ? totalDistanceKm / totalFuelMafLiters
-            : 0.0;
+                ? totalDistanceKm / totalFuelMafLiters
+                : 0.0;
     }
 
     /**
      * Update current trip with latest calculated data.
      */
     private void updateCurrentTrip(CalculatedData calc) {
-        if (currentTrip != null && totalDistanceKm > 0) {
+        if (currentTrip != null && segmentDistanceKm > 0) {
             currentTrip.updateTrip(calc);
             tripLogManager.updateCurrentTrip(currentTrip);
         }
@@ -1602,9 +1645,12 @@ public class MainActivity extends AppCompatActivity {
         updateCurrentTrip(null);
 
         // Close trip record on disconnection
-        if (currentTrip != null && totalDistanceKm > 0.01) {
-            currentTrip.endTrip(totalDistanceKm, calculateAverageSpeed(), calculateAverageFuelConsumption());
+        String tripDuration = null;
+        if (currentTrip != null && segmentDistanceKm > 0.01 && totalDistanceKm > 0.01) {
+            currentTrip.endTrip(segmentDistanceKm, calculateSegmentSpeed(), calculateSegmentFuelConsumption(),
+                    totalDistanceKm, calculateAverageSpeed(), calculateAverageFuelConsumption());
             tripLogManager.updateCurrentTrip(currentTrip);
+            tripDuration = currentTrip.getTripDuration();
         }
         currentTrip = null;
         currentSessionId = null;
@@ -1619,6 +1665,7 @@ public class MainActivity extends AppCompatActivity {
 
         showStatus("Disconnected.");
         tvElmVersion.setText("ELM327: -- | Protocol: --");
+        /*
         tvRpm.setText("--");
         tvInstantSpeed.setText("--");
         tvInstantFuelRate.setText("--");
@@ -1627,6 +1674,8 @@ public class MainActivity extends AppCompatActivity {
         tvTotLiters.setText("--");
         tvAvgSpeed.setText("--");
         tvAvgFuelRate.setText("--");
+        */
+        if ( tripDuration != null ) tvTripDuration.setText(tripDuration);
 
     }
 
@@ -1665,10 +1714,15 @@ public class MainActivity extends AppCompatActivity {
         float fuelRateL100 = -1f;
         float InstantFuelFlow = -1f;
         float instantFuelRate = -1f;
+        double segmentDistance = 0.0;
+        double segmentFuelMafLiters = 0.0;
+        // overall - per connection session
         double totalDistance = 0.0;
         double totalFuelMafLiters = 0.0;
-        double avgSpeed = 0.0;
-        double avgFuelRate = 0.0;
+        double segmentAvgSpeed = 0.0;
+        double segmentFuelRate = 0.0;
+        double averageSpeed = 0.0;
+        double averageFuelRate = 0.0;
         int fuelType = FUEL_DIESEL;
         long[] rpmBuckets   = new long[4];
         long[] speedBuckets = new long[4];

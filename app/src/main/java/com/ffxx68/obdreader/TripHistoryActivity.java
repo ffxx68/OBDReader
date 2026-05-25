@@ -60,7 +60,7 @@ public class TripHistoryActivity extends AppCompatActivity {
         List<TripLog> newTrips = new java.util.ArrayList<>();
         for (TripLog t : allTrips) {
             // TESTING
-            // if (t.getStartTime() > lastExportTime) {
+            // if (t.getSegmentStartTime() > lastExportTime) {
                 newTrips.add(t);
             //}
         }
@@ -79,8 +79,8 @@ public class TripHistoryActivity extends AppCompatActivity {
             Uri uri = FileProvider.getUriForFile(this,
                     getPackageName() + ".fileprovider", csvFile);
 
-            String dateFrom = trips.get(trips.size() - 1).getStartTimeFormatted();
-            String dateTo   = trips.get(0).getStartTimeFormatted();
+            String dateFrom = trips.get(trips.size() - 1).getSegmentStartTimeFormatted();
+            String dateTo   = trips.get(0).getSegmentStartTimeFormatted();
             String subject  = trips.size() == 1
                     ? "OBD Reader – Viaggi " + dateFrom
                     : "OBD Reader – Viaggi " + dateFrom + " / " + dateTo;
@@ -92,7 +92,7 @@ public class TripHistoryActivity extends AppCompatActivity {
             intent.putExtra(Intent.EXTRA_STREAM, uri);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
-            long newestTripTime = trips.get(0).getStartTime();
+            long newestTripTime = trips.get(0).getSegmentStartTime();
             getPreferences(MODE_PRIVATE).edit()
                     .putLong(KEY_LAST_EXPORT_TIME, newestTripTime)
                     .apply();
@@ -126,16 +126,16 @@ public class TripHistoryActivity extends AppCompatActivity {
                 String fuelLabel = (t.getFuelType() == 0) ? "Diesel" : "Benzina";
                 writer.write(String.format(Locale.US,
                         "%s,%s,%s,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.2f,%s,%.1f,%.1f,%.1f,%.1f,%s,%d\n",
-                        t.getStartTimeFormatted(),
-                        t.getEndTimeFormatted(),
-                        t.getDuration(),
-                        t.getTotalKm(),
-                        t.getAvgSpeedKmh(),
+                        t.getSegmentStartTimeFormatted(),
+                        t.getSegmentEndTimeFormatted(),
+                        t.getSegmentDuration(),
+                        t.getSegmentKm(),
+                        t.getSegmentAvgSpeedKmh(),
                         stotal > 0 ? 100.0 * sb[0] / stotal : 0.0,
                         stotal > 0 ? 100.0 * sb[1] / stotal : 0.0,
                         stotal > 0 ? 100.0 * sb[2] / stotal : 0.0,
                         stotal > 0 ? 100.0 * sb[3] / stotal : 0.0,
-                        t.getAvgKmLMaf(),
+                        t.getSegmentAvgKmLMaf(),
                         fuelLabel,
                         rtotal > 0 ? 100.0 * rb[0] / rtotal : 0.0,
                         rtotal > 0 ? 100.0 * rb[1] / rtotal : 0.0,
@@ -184,7 +184,7 @@ public class TripHistoryActivity extends AppCompatActivity {
 
         // Trip start
         TextView tvStart = new TextView(this);
-        tvStart.setText("Start: " + trip.getStartTimeFormatted());
+        tvStart.setText("Start: " + trip.getSegmentStartTimeFormatted());
         tvStart.setTextSize(16);
         tvStart.setTextColor(0xFFFFFFFF);
         tvStart.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -192,7 +192,7 @@ public class TripHistoryActivity extends AppCompatActivity {
 
         // Trip end
         TextView tvEnd = new TextView(this);
-        tvEnd.setText("End: " + trip.getEndTimeFormatted());
+        tvEnd.setText("End: " + trip.getSegmentEndTimeFormatted());
         tvEnd.setTextSize(14);
         tvEnd.setTextColor(0xFFD0D0D0);
         tvEnd.setPadding(0, 4, 0, 8);
@@ -200,14 +200,14 @@ public class TripHistoryActivity extends AppCompatActivity {
 
         // Duration
         TextView tvDuration = new TextView(this);
-        tvDuration.setText("Duration: " + trip.getDuration());
+        tvDuration.setText("Duration: " + trip.getSegmentDuration());
         tvDuration.setTextSize(14);
         tvDuration.setTextColor(0xFF81C784);
         container.addView(tvDuration);
 
         // Distance traveled
         TextView tvKm = new TextView(this);
-        tvKm.setText(String.format(Locale.US, "Distance: %.2f km", trip.getTotalKm()));
+        tvKm.setText(String.format(Locale.US, "Distance: %.2f km", trip.getSegmentKm()));
         tvKm.setTextSize(16);
         tvKm.setTextColor(0xFFFFFFFF);
         tvKm.setPadding(0, 8, 0, 0);
@@ -215,7 +215,7 @@ public class TripHistoryActivity extends AppCompatActivity {
 
         // Average speed
         TextView tvSpeed = new TextView(this);
-        tvSpeed.setText(String.format(Locale.US, "Average speed: %.1f km/h", trip.getAvgSpeedKmh()));
+        tvSpeed.setText(String.format(Locale.US, "Average speed: %.1f km/h", trip.getSegmentAvgSpeedKmh()));
         tvSpeed.setTextSize(14);
         tvSpeed.setTextColor(0xFFD0D0D0);
         container.addView(tvSpeed);
@@ -229,7 +229,7 @@ public class TripHistoryActivity extends AppCompatActivity {
 
         // Average km/L MAF
         TextView tvKmLMaf = new TextView(this);
-        tvKmLMaf.setText(String.format(Locale.US, "Avg km/L (MAF): %.2f", trip.getAvgKmLMaf()));
+        tvKmLMaf.setText(String.format(Locale.US, "Avg km/L (MAF): %.2f", trip.getSegmentAvgKmLMaf()));
         tvKmLMaf.setTextSize(14);
         tvKmLMaf.setTextColor(0xFF81C784);
         container.addView(tvKmLMaf);
