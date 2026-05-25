@@ -38,7 +38,7 @@ android {
         minSdk 23          // Android 6.0 — supporto BT classico e permessi runtime
         targetSdk 36
         versionCode currentVersionCode
-        versionName "1.3 (${currentVersionCode})"
+        versionName "1.4 (${currentVersionCode})"
     }
 
     signingConfigs {
