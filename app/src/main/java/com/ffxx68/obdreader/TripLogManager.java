@@ -29,6 +29,7 @@ public class TripLogManager {
      * Saves a new trip
      */
     public void saveTrip(TripLog trip) {
+        android.util.Log.d("TripLogManager", "saveTrip(): saving trip seg=" + (trip != null ? trip.getSegmentIndex() : -1) + " session=" + (trip != null ? trip.getSessionId() : "null"));
         List<TripLog> trips = getAllTrips();
         trips.add(0, trip); // Add to the beginning (most recent)
 
@@ -45,6 +46,7 @@ public class TripLogManager {
      * Updates the first trip (the current one) in the list
      */
     public void updateCurrentTrip(TripLog trip) {
+        android.util.Log.d("TripLogManager", "updateCurrentTrip(): updating current trip seg=" + (trip != null ? trip.getSegmentIndex() : -1) + " session=" + (trip != null ? trip.getSessionId() : "null"));
         List<TripLog> trips = getAllTrips();
         if (!trips.isEmpty()) {
             trips.set(0, trip); // Update the first (most recent)

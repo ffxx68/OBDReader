@@ -59,6 +59,8 @@ public class SettingsActivity extends AppCompatActivity {
             }
         }
     };
+    // Attempts to request PID refresh from MainActivity when the list is empty
+    private int pidRefreshAttempts = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -163,9 +165,29 @@ public class SettingsActivity extends AppCompatActivity {
         Set<Integer> supportedPids = MainActivity.getSupportedPids();
 
         if (supportedPids.isEmpty()) {
+            // Try a short refresh cycle before showing the final message
+            if (pidRefreshAttempts == 0) {
+                tvSupportedPids.setText("Reading supported PIDs...");
+            } else {
+                tvSupportedPids.setText("Reading supported PIDs... (retry " + pidRefreshAttempts + ")");
+            }
+            if (pidRefreshAttempts < 3) {
+                pidRefreshAttempts++;
+                MainActivity.requestPidsRefresh();
+                // retry after a short delay
+                tvSupportedPids.postDelayed(this::loadSupportedPids, 1500);
+                return;
+            }
+
+            // after retries, show final guidance
             tvSupportedPids.setText("Connect to the ECU to see supported PIDs.");
+            // Request one last time in case the app missed the broadcast
+            MainActivity.requestPidsRefresh();
             return;
         }
+
+        // Reset attempts when successful
+        pidRefreshAttempts = 0;
 
         // Sort PIDs for display
         List<Integer> sortedPids = new ArrayList<>(supportedPids);

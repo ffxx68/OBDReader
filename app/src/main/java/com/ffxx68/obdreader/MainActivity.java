@@ -29,6 +29,7 @@ public class MainActivity extends AppCompatActivity {
     // Standard UUID for Serial Port Profile (SPP) - used by ELM327
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private static final int PERMISSION_REQUEST_CODE = 100;
+    private static final String TAG = "MainActivity";
     private static final int READ_INTERVAL_MS = 500; // polling delay
     private static final int INITIAL_POLL_DELAY_MS = 2500; // delay before first poll after init
     private static final int MAX_LOG_LINES = 200;     // ~100 command/response exchanges
@@ -650,10 +651,34 @@ public class MainActivity extends AppCompatActivity {
 
         for (int queryPid : queryPids) {
             String command = String.format("01%02X", queryPid);
+
+            // Retry logic: some ELM327 firmwares may reply with "SEARCHING..." while
+            // trying to communicate on the bus. In that case retry the same command
+            // a few times with a small delay before giving up.
             String response = sendCommand(command, 500);
+            int retry = 0;
+            while (response != null && response.toUpperCase().contains("SEARCHING") && retry < 3) {
+                int waitMs = 500 + (retry * 300);
+                final String dbgCmd = command;
+                final String dbgResp = response;
+                mainHandler.post(() -> CommunicationLogActivity.logMessage(
+                        ">> PID discovery: sent=" + dbgCmd + " response=" + (dbgResp == null ? "<null>" : dbgResp) + " (SEARCHING - retry)"));
+                try { Thread.sleep(waitMs); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                response = sendCommand(command, 600 + retry * 200);
+                retry++;
+            }
+
+            // Log raw response for diagnostics (final attempt)
+            final String finalResponseLog = response;
+            mainHandler.post(() -> CommunicationLogActivity.logMessage(
+                    ">> PID discovery: sent=" + command + " response=" + (finalResponseLog == null ? "<null>" : finalResponseLog)));
 
             // Check if response is valid
             if (!isValidEcuResponse(response)) {
+                // Log invalid response reason
+                final String respInvalid = response;
+                mainHandler.post(() -> CommunicationLogActivity.logMessage(
+                        ">> PID discovery: invalid response for " + command + " -> '" + respInvalid + "'"));
                 // If it's the first query (0100) and fails, ECU is not responding
                 if (queryPid == 0x00) {
                     return false;
@@ -666,6 +691,12 @@ public class MainActivity extends AppCompatActivity {
 
             // Extract supported PIDs from this response
             Set<Integer> pidsInRange = parseSupportedPids(response, queryPid);
+            if (pidsInRange.isEmpty()) {
+                final String resp = response == null ? "<null>" : response;
+                mainHandler.post(() -> CommunicationLogActivity.logMessage(
+                        ">> PID discovery: no PIDs parsed from response for " + String.format("01%02X", queryPid)
+                                + " -> '" + resp + "'"));
+            }
             supportedPids.addAll(pidsInRange);
 
             // If bit 0 (PID 0x20 in next range) is not set, there are no more ranges
@@ -749,6 +780,10 @@ public class MainActivity extends AppCompatActivity {
         int idx = clean.indexOf(header);
 
         if (idx < 0 || clean.length() < idx + header.length() + 8) {
+            // Log parse failure for diagnostics
+            final String debugClean = clean;
+            mainHandler.post(() -> CommunicationLogActivity.logMessage(
+                    ">> parseSupportedPids: failed to find header '" + header + "' in cleaned response '" + debugClean + "'"));
             return pids; // Invalid response
         }
 
@@ -920,6 +955,10 @@ public class MainActivity extends AppCompatActivity {
                         mainHandler.post(() -> {
                             if (wasWaitingForEngine) showStatus("ECU connected. Reading data...");
                             updateUI(data, calc);
+                            // If the segment timer was stopped (e.g. due to temporary NO DATA), restart it
+                            if (segmentRunnable == null) {
+                                startSegmentTimer();
+                            }
                             if (isPolling) mainHandler.postDelayed(pollingRunnable, READ_INTERVAL_MS);
                         });
 
@@ -1023,6 +1062,11 @@ public class MainActivity extends AppCompatActivity {
                 }).start();
             }
         };
+        // Ensure the segment timer is running when polling starts and we have an active trip
+        if (currentTrip != null && segmentRunnable == null) {
+            android.util.Log.d(TAG, "startPolling(): segment timer not running, starting it now");
+            startSegmentTimer();
+        }
         mainHandler.postDelayed(pollingRunnable, INITIAL_POLL_DELAY_MS);
     }
 
@@ -1043,6 +1087,7 @@ public class MainActivity extends AppCompatActivity {
                 mainHandler.postDelayed(this, SEGMENT_INTERVAL_MS);
             }
         };
+        android.util.Log.d(TAG, "Segment timer started (interval ms=" + SEGMENT_INTERVAL_MS + ")");
         mainHandler.postDelayed(segmentRunnable, SEGMENT_INTERVAL_MS);
     }
 
@@ -1050,6 +1095,7 @@ public class MainActivity extends AppCompatActivity {
         if (segmentRunnable != null) {
             mainHandler.removeCallbacks(segmentRunnable);
             segmentRunnable = null;
+            android.util.Log.d(TAG, "Segment timer stopped");
         }
     }
 
@@ -1060,6 +1106,7 @@ public class MainActivity extends AppCompatActivity {
         if (currentTrip == null || currentSessionId == null) return;
 
         // Chiudi il segmento corrente
+        android.util.Log.d(TAG, "rotateSegment(): closing segment idx=" + currentSegmentIndex + " dist=" + segmentDistanceKm);
         currentTrip.endSegment(segmentDistanceKm, calculateSegmentSpeed(), calculateSegmentFuelConsumption());
         tripLogManager.updateCurrentTrip(currentTrip);
 
@@ -1074,6 +1121,9 @@ public class MainActivity extends AppCompatActivity {
         currentSegmentIndex++;
         currentTrip = TripLog.startSegment(currentSessionId, currentSegmentIndex, (currentTrip != null ? currentTrip.getStartTime() : null));
         tripLogManager.saveTrip(currentTrip);
+        android.util.Log.d(TAG, "rotateSegment(): new segment created idx=" + currentSegmentIndex + " session=" + currentSessionId);
+        // Small UI feedback for debug in emulator
+        Toast.makeText(this, "Segment rotated → seg " + currentSegmentIndex, Toast.LENGTH_SHORT).show();
     }
 
     /**
@@ -1765,6 +1815,20 @@ public class MainActivity extends AppCompatActivity {
             return new HashSet<>(inst.supportedPids);
         }
         return new HashSet<>();
+    }
+
+    /**
+     * Request MainActivity to resend a local broadcast notifying that PID list
+     * may have changed. Useful when another Activity (e.g. Settings) is in
+     * foreground and wants to refresh its view.
+     */
+    public static void requestPidsRefresh() {
+        MainActivity inst = getInstance();
+        if (inst == null) return;
+        inst.mainHandler.post(() -> {
+            Intent intent = new Intent("ACTION_PIDS_UPDATED");
+            LocalBroadcastManager.getInstance(inst).sendBroadcast(intent);
+        });
     }
 
     private static MainActivity instance;
