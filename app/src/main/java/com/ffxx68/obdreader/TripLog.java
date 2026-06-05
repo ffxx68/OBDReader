@@ -15,6 +15,8 @@ public class TripLog {
     private long segmentEndTime;
     private long startTime;
     private long endTime;
+    // Timestamp dell'ultima lettura valida dai sensori (aggiornato SOLO quando arrivano dati)
+    private long lastUpdateTime;
     private double segmentKm;
     private double totalKm;
     private double segmentAvgSpeedKmh;
@@ -30,6 +32,7 @@ public class TripLog {
     public TripLog() {
         this.segmentStartTime = System.currentTimeMillis();
         this.startTime = this.segmentStartTime;
+        this.lastUpdateTime = this.startTime; // inizializza lastUpdate allo start per evitare durate crescenti prima della prima lettura
         this.sessionId = UUID.randomUUID().toString();
         this.segmentIndex = 0;
     }
@@ -54,6 +57,7 @@ public class TripLog {
                         double totalKm, double avgSpeedKmh, double avgKmLMaf) {
         endSegment(segmentKm, segmentAvgSpeedKmh, segmentAvgKmLMaf);
         this.endTime = System.currentTimeMillis();
+        this.lastUpdateTime = this.endTime;
         this.totalKm = totalKm;
         this.averageSpeedKmh = avgSpeedKmh;
         this.averageKmLMaf = avgKmLMaf;
@@ -74,6 +78,10 @@ public class TripLog {
             this.speedBuckets = calc.speedBuckets != null ? calc.speedBuckets.clone() : new long[4];
         }
     }
+
+    // Setter/getter per lastUpdateTime
+    public long getLastUpdateTime() { return lastUpdateTime; }
+    public void setLastUpdateTime(long lastUpdateTime) { this.lastUpdateTime = lastUpdateTime; }
 
     // Versione legacy per compatibilità
     public void updateTrip(double totalKm, double avgSpeedKmh, double avgKmLMaf) {
@@ -120,6 +128,11 @@ public class TripLog {
         seg.segmentIndex = segmentIndex;
         if (tripStartTime != null && tripStartTime > 0) {
             seg.startTime = tripStartTime;
+            // Do NOT set lastUpdateTime to the overall trip start: lastUpdateTime must refer
+            // to the timestamp of the latest VALID data sample. For a new segment created
+            // now, initialize lastUpdateTime to the new segment start time to avoid
+            // negative or inflated segment durations.
+            seg.lastUpdateTime = seg.segmentStartTime;
         }
         return seg;
     }
@@ -139,7 +152,14 @@ public class TripLog {
     }
 
     public String getSegmentDuration() {
-        long end = (segmentEndTime > 0) ? segmentEndTime : System.currentTimeMillis();
+        long end;
+        if (segmentEndTime > 0) {
+            end = segmentEndTime;
+        } else if (lastUpdateTime > 0) {
+            end = lastUpdateTime; // usa l'ultima lettura valida quando il segmento è ancora in corso
+        } else {
+            end = System.currentTimeMillis();
+        }
         long durationMs = end - segmentStartTime;
         long hours = durationMs / 3600000;
         long minutes = (durationMs % 3600000) / 60000;
@@ -152,7 +172,14 @@ public class TripLog {
     }
 
     public String getTripDuration() {
-        long end = (endTime > 0) ? endTime : System.currentTimeMillis();
+        long end;
+        if (endTime > 0) {
+            end = endTime;
+        } else if (lastUpdateTime > 0) {
+            end = lastUpdateTime; // usa l'ultima lettura valida quando il viaggio è ancora in corso
+        } else {
+            end = System.currentTimeMillis();
+        }
         long durationMs = end - startTime;
         long hours = durationMs / 3600000;
         long minutes = (durationMs % 3600000) / 60000;

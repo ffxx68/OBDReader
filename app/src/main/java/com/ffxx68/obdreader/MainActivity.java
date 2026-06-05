@@ -931,7 +931,7 @@ public class MainActivity extends AppCompatActivity {
             rpmBuckets   = new long[4];
             speedBuckets = new long[4];
         }
-        lastUpdateTimeMs = System.currentTimeMillis();
+        // Do NOT set lastUpdateTimeMs here: it must be updated ONLY when a successful data read occurs
 
         pollingRunnable = new Runnable() {
             @Override
@@ -1115,7 +1115,6 @@ public class MainActivity extends AppCompatActivity {
         segmentFuelMafLiters = 0.0;
         rpmBuckets   = new long[4];
         speedBuckets = new long[4];
-        lastUpdateTimeMs = System.currentTimeMillis();
 
         // Nuovo segmento nella stessa sessione
         currentSegmentIndex++;
@@ -1579,20 +1578,21 @@ public class MainActivity extends AppCompatActivity {
         calc.instantFuelRate = (calc.fuelRateL100 > 0) ? (100.0f / calc.fuelRateL100) : -1f;
 
         // Trip statistics (distance, fuel, average speed/consumption)
-        if (data.instantSpeed > 0) {
-            long currentTimeMs = System.currentTimeMillis();
-            if (lastUpdateTimeMs > 0) {
-                double elapsedHours = (currentTimeMs - lastUpdateTimeMs) / 3600000.0; // ms to hours
-                double distanceKm = data.instantSpeed * elapsedHours;
-                segmentDistanceKm += distanceKm;
-                totalDistanceKm += distanceKm;
-                if (calc.InstantFuelFlow > 0) {
-                    segmentFuelMafLiters += calc.InstantFuelFlow * elapsedHours;
-                    totalFuelMafLiters += calc.InstantFuelFlow * elapsedHours;
-                }
+        // Use lastUpdateTimeMs as the timestamp of the previous successful data read.
+        // Update lastUpdateTimeMs to the current read time for every successful data fetch
+        long currentTimeMs = System.currentTimeMillis();
+        if (lastUpdateTimeMs > 0 && data.instantSpeed > 0) {
+            double elapsedHours = (currentTimeMs - lastUpdateTimeMs) / 3600000.0; // ms to hours
+            double distanceKm = data.instantSpeed * elapsedHours;
+            segmentDistanceKm += distanceKm;
+            totalDistanceKm += distanceKm;
+            if (calc.InstantFuelFlow > 0) {
+                segmentFuelMafLiters += calc.InstantFuelFlow * elapsedHours;
+                totalFuelMafLiters += calc.InstantFuelFlow * elapsedHours;
             }
-            lastUpdateTimeMs = System.currentTimeMillis();
         }
+        // aggiorna il timestamp dell'ultima lettura (solo dopo che la lettura è andata a buon fine)
+        lastUpdateTimeMs = currentTimeMs;
 
         // Accumulate speed samples (only when moving)
         if (data.instantSpeed >= 0) {
@@ -1679,8 +1679,11 @@ public class MainActivity extends AppCompatActivity {
      * Update current trip with latest calculated data.
      */
     private void updateCurrentTrip(CalculatedData calc) {
-        if (currentTrip != null && segmentDistanceKm > 0) {
+        if (currentTrip != null) {
+            // Aggiorna dati del trip con i calcoli più recenti
             currentTrip.updateTrip(calc);
+            // Imposta l'ultima lettura valida sul TripLog (usata per il calcolo della durata)
+            currentTrip.setLastUpdateTime(lastUpdateTimeMs);
             tripLogManager.updateCurrentTrip(currentTrip);
         }
     }
