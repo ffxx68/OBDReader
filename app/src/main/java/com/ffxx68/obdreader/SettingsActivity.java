@@ -10,6 +10,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.RadioGroup;
 import android.widget.TextView;
 import android.content.BroadcastReceiver;
@@ -44,6 +45,7 @@ public class SettingsActivity extends AppCompatActivity {
     private Button btnScanDevices;
     private Button btnTripHistory;
     private Button btnCommLog;
+    private EditText etKmLCorrection;
     private BluetoothAdapter bluetoothAdapter;
     private final List<BluetoothDevice> pairedDevices = new ArrayList<>();
 
@@ -88,6 +90,7 @@ public class SettingsActivity extends AppCompatActivity {
         btnScanDevices = findViewById(R.id.btnScanDevices);
         btnTripHistory = findViewById(R.id.btnTripHistory);
         btnCommLog = findViewById(R.id.btnCommLog);
+        etKmLCorrection = findViewById(R.id.etKmLCorrection);
 
         // Listen for protocol changes
         rgProtocol.setOnCheckedChangeListener((group, checkedId) -> saveProtocolSelection(checkedId));
@@ -110,6 +113,12 @@ public class SettingsActivity extends AppCompatActivity {
             startActivity(intent);
         });
 
+        etKmLCorrection.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus) {
+                saveKmLCorrectionFactor();
+            }
+        });
+
         // Load PIDs supported by the ECU
         loadSupportedPids();
     }
@@ -123,6 +132,10 @@ public class SettingsActivity extends AppCompatActivity {
 
         int savedFuelType = prefs.getInt(MainActivity.PREF_FUEL_TYPE, MainActivity.FUEL_DIESEL);
         rgFuelType.check(savedFuelType == MainActivity.FUEL_PETROL ? R.id.rbPetrol : R.id.rbDiesel);
+
+        float correction = sanitizeKmLCorrectionFactor(
+                prefs.getFloat(MainActivity.PREF_KM_L_CORRECTION, MainActivity.DEFAULT_KM_L_CORRECTION));
+        etKmLCorrection.setText(formatKmLCorrection(correction));
     }
 
     private void saveProtocolSelection(int checkedId) {
@@ -156,9 +169,43 @@ public class SettingsActivity extends AppCompatActivity {
 
     @Override
     protected void onPause() {
+        saveKmLCorrectionFactor();
         super.onPause();
         // Deregistra il receiver per evitare memory leak
         LocalBroadcastManager.getInstance(this).unregisterReceiver(pidsUpdatedReceiver);
+    }
+
+    private void saveKmLCorrectionFactor() {
+        String raw = etKmLCorrection.getText() != null ? etKmLCorrection.getText().toString() : "";
+        float factor;
+        try {
+            factor = Float.parseFloat(raw.trim().replace(',', '.'));
+        } catch (NumberFormatException e) {
+            factor = MainActivity.DEFAULT_KM_L_CORRECTION;
+        }
+        factor = sanitizeKmLCorrectionFactor(factor);
+
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putFloat(MainActivity.PREF_KM_L_CORRECTION, factor)
+                .apply();
+
+        etKmLCorrection.setText(formatKmLCorrection(factor));
+        MainActivity instance = MainActivity.getInstance();
+        if (instance != null) {
+            instance.setKmLCorrectionFactor(factor);
+        }
+    }
+
+    private float sanitizeKmLCorrectionFactor(float factor) {
+        return factor > 0f ? factor : MainActivity.DEFAULT_KM_L_CORRECTION;
+    }
+
+    private String formatKmLCorrection(float factor) {
+        if (Math.abs(factor - Math.round(factor)) < 0.0001f) {
+            return String.valueOf((int) Math.round(factor));
+        }
+        return String.valueOf(factor);
     }
 
     private void loadSupportedPids() {

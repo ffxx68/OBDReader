@@ -114,6 +114,28 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:text="Correzione consumo Km/L:"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/white"
+        android:paddingBottom="8dp" />
+
+    <EditText
+        android:id="@+id/etKmLCorrection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="20dp"
+        android:background="#1A237E"
+        android:hint="1"
+        android:inputType="numberDecimal"
+        android:padding="12dp"
+        android:textColor="@android:color/white"
+        android:textColorHint="#B0BEC5"
+        android:textSize="16sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
         android:text="Protocollo forzato:"
         android:textSize="16sp"
         android:textStyle="bold"

@@ -38,6 +38,8 @@ public class MainActivity extends AppCompatActivity {
     private static final String PREF_DEVICE_ADDRESS = "selectedDeviceAddress";
     private static final String PREF_PROTOCOL = "selectedProtocol";
     static final String PREF_FUEL_TYPE = "fuelType";
+    static final String PREF_KM_L_CORRECTION = "kmLCorrectionFactor";
+    static final float DEFAULT_KM_L_CORRECTION = 1.0f;
     static final int FUEL_DIESEL  = 0;
     static final int FUEL_PETROL  = 1;
 
@@ -300,6 +302,7 @@ public class MainActivity extends AppCompatActivity {
 
     // Tipo carburante selezionato dall'utente (FUEL_DIESEL / FUEL_PETROL)
     private int fuelType = FUEL_DIESEL;
+    private float kmLCorrectionFactor = DEFAULT_KM_L_CORRECTION;
 
     // Emulator mode
     private boolean useMockData = false;
@@ -351,6 +354,8 @@ public class MainActivity extends AppCompatActivity {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         selectedProtocol = prefs.getInt(PREF_PROTOCOL, R.id.rbAuto);
         fuelType = prefs.getInt(PREF_FUEL_TYPE, FUEL_DIESEL);
+        kmLCorrectionFactor = sanitizeKmLCorrectionFactor(
+                prefs.getFloat(PREF_KM_L_CORRECTION, DEFAULT_KM_L_CORRECTION));
     }
 
     private void initViews() {
@@ -420,6 +425,8 @@ public class MainActivity extends AppCompatActivity {
         // Ricarica preferenze che potrebbero essere cambiate in SettingsActivity
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         fuelType = prefs.getInt(PREF_FUEL_TYPE, FUEL_DIESEL);
+        kmLCorrectionFactor = sanitizeKmLCorrectionFactor(
+                prefs.getFloat(PREF_KM_L_CORRECTION, DEFAULT_KM_L_CORRECTION));
         if (useMockData) {
             showStatus("Modalità MOCK attiva. Tocca 'Connetti' per simulare la ECU");
             btnConnect.setEnabled(true);
@@ -1576,6 +1583,7 @@ public class MainActivity extends AppCompatActivity {
             calc.fuelRateL100 = -1f;
         }
         calc.instantFuelRate = (calc.fuelRateL100 > 0) ? (100.0f / calc.fuelRateL100) : -1f;
+        calc.instantFuelRate = (float) applyKmLCorrection(calc.instantFuelRate);
 
         // Trip statistics (distance, fuel, average speed/consumption)
         // Use lastUpdateTimeMs as the timestamp of the previous successful data read.
@@ -1659,9 +1667,10 @@ public class MainActivity extends AppCompatActivity {
      * @return average consumption in km/L, or 0.0 if not calculable
      */
     private double calculateSegmentFuelConsumption() {
-        return (segmentDistanceKm > 0.01 && segmentFuelMafLiters > 0)
+        double kmPerLiter = (segmentDistanceKm > 0.01 && segmentFuelMafLiters > 0)
             ? segmentDistanceKm / segmentFuelMafLiters
             : 0.0;
+        return applyKmLCorrection(kmPerLiter);
     }
 
     /**
@@ -1670,9 +1679,18 @@ public class MainActivity extends AppCompatActivity {
      * @return average consumption in km/L, or 0.0 if not calculable
      */
     private double calculateAverageFuelConsumption() {
-        return (totalDistanceKm > 0.01 && totalFuelMafLiters > 0)
+        double kmPerLiter = (totalDistanceKm > 0.01 && totalFuelMafLiters > 0)
                 ? totalDistanceKm / totalFuelMafLiters
                 : 0.0;
+        return applyKmLCorrection(kmPerLiter);
+    }
+
+    private float sanitizeKmLCorrectionFactor(float factor) {
+        return factor > 0f ? factor : DEFAULT_KM_L_CORRECTION;
+    }
+
+    private double applyKmLCorrection(double kmPerLiter) {
+        return kmPerLiter > 0 ? kmPerLiter * kmLCorrectionFactor : kmPerLiter;
     }
 
     /**
@@ -1839,6 +1857,10 @@ public class MainActivity extends AppCompatActivity {
     public static MainActivity getInstance() { return instance; }
 
     public void setFuelType(int type) { fuelType = type; }
+
+    public void setKmLCorrectionFactor(float factor) {
+        kmLCorrectionFactor = sanitizeKmLCorrectionFactor(factor);
+    }
 
     // PID mockati per test
     private static final Set<Integer> MOCK_PIDS = new HashSet<>(Arrays.asList(
