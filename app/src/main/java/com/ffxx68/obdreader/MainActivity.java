@@ -8,6 +8,10 @@ import android.bluetooth.BluetoothSocket;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.PorterDuff;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.LayerDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -266,7 +270,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvTemp;
     private TextView tvTripDuration;
     private TextView tvInstantFuelRate;
-    private TextView tvInstantFuelFlow;
+    private ProgressBar pbInstantFuelRateBar;
     private TextView tvTotalDistance;
     private TextView tvTotLiters;
     private TextView tvAvgSpeed;
@@ -365,7 +369,7 @@ public class MainActivity extends AppCompatActivity {
         tvInstantSpeed     = findViewById(R.id.tvSpeed);
         tvTripDuration = findViewById(R.id.tvTripDuration);
         tvInstantFuelRate = findViewById(R.id.tvFuelRateInstantMaf);
-        tvInstantFuelFlow = findViewById(R.id.tvFuelFlow);
+        pbInstantFuelRateBar = findViewById(R.id.pbFuelRateInstantBar);
         tvTotalDistance   = findViewById(R.id.tvTotalKm);
         tvTotLiters   = findViewById(R.id.tvTotLiters);
         tvAvgSpeed  = findViewById(R.id.tvAvgSpeed);
@@ -377,6 +381,7 @@ public class MainActivity extends AppCompatActivity {
         btnSettings     = findViewById(R.id.btnSettings);
 
         btnDisconnect.setEnabled(false);
+        pbInstantFuelRateBar.setMax(1000);
     }
 
     private void initBluetooth() {
@@ -467,16 +472,17 @@ public class MainActivity extends AppCompatActivity {
     // Mock OBD data (random!)
     private OBDData fetchOBDDataMock() {
         OBDData data = new OBDData();
-        data.rpm = 900 + (int)(Math.random()*200);
-        data.instantSpeed = 50 + (int)(Math.random()*10);
+        data.rpm = 850 + (int)(Math.random()*2450);
+        data.instantSpeed = 20 + (int)(Math.random()*111);
         data.tempCelsius = 85 + (int)(Math.random()*5);
-        data.engineLoad = 30 + (int)(Math.random()*10);
-        data.mafGps = 12.5f + (float)(Math.random()*2);
+        data.engineLoad = 15 + (int)(Math.random()*71);
+        data.mafGps = 5.5f + (float)(Math.random()*18f);
         data.iatCelsius = 25 + (int)(Math.random()*3);
         data.mapKpa = 110 + (int)(Math.random()*5);
         data.baroKpa = 100 + (int)(Math.random()*2);
-        data.throttlePosition = 40 + (int)(Math.random()*10);
-        data.fuelRateEcuGps = -1f;
+        data.throttlePosition = 10 + (int)(Math.random()*81);
+        float targetKmL = 1f + (float)(Math.random()*49f); // ~1..50 km/L
+        data.fuelRateEcuGps = data.instantSpeed / targetKmL; // L/h -> km/L = speed / fuelFlow
         return data;
     }
 
@@ -1532,10 +1538,17 @@ public class MainActivity extends AppCompatActivity {
                 ? String.format(java.util.Locale.US, "%.2f", calc.instantFuelRate)
                 : (data.instantSpeed == 0 ? "stopped" : "N/A"));
 
-        // Display fuel flow rate in L/h (liters per hour)
-        tvInstantFuelFlow.setText(calc.InstantFuelFlow > 0
-                ? String.format(java.util.Locale.US, "%.2f", calc.InstantFuelFlow)
-                : "N/A");
+        // Display km/L on inverted logarithmic bar (50+ on left to 2 on right).
+        boolean hasValidInstantKmL = data.instantSpeed != 0 && calc.instantFuelRate > 0;
+        if (hasValidInstantKmL) {
+            pbInstantFuelRateBar.setProgress(mapInstantKmLToBar(calc.instantFuelRate));
+            updateInstantFuelRateBarColor(calc.instantFuelRate);
+        } else {
+            pbInstantFuelRateBar.setProgress(0);
+            if (data.instantSpeed != 0) {
+                updateInstantFuelRateBarColor(50f);
+            }
+        }
 
         // Display traveled km
         tvTotalDistance.setText(String.format(java.util.Locale.US, "%.2f", totalDistanceKm));
@@ -1560,6 +1573,37 @@ public class MainActivity extends AppCompatActivity {
         // Trip duration
         if (currentTrip != null) {
             tvTripDuration.setText(currentTrip.getTripDuration());
+        }
+    }
+
+    private int mapInstantKmLToBar(float kmLValue) {
+        if (kmLValue >= 50f) {
+            return 30; // Keep a visible green segment for 50+
+        }
+        if (kmLValue <= 2f) {
+            return 1000; // Clamp to right red edge for <=2
+        }
+        float clamped = Math.max(2f, Math.min(50f, kmLValue));
+        double normalized = (Math.log10(50.0) - Math.log10(clamped)) / (Math.log10(50.0) - Math.log10(2.0));
+        return (int) Math.round(normalized * 1000.0);
+    }
+
+    private void updateInstantFuelRateBarColor(float kmLValue) {
+        final int color;
+        if (kmLValue >= 20f) {
+            color = Color.parseColor("#4CAF50");
+        } else if (kmLValue >= 10f) {
+            color = Color.parseColor("#FFEB3B");
+        } else {
+            color = Color.parseColor("#F44336");
+        }
+
+        Drawable drawable = pbInstantFuelRateBar.getProgressDrawable();
+        if (drawable instanceof LayerDrawable) {
+            Drawable progress = ((LayerDrawable) drawable).findDrawableByLayerId(android.R.id.progress);
+            if (progress != null) {
+                progress.setColorFilter(color, PorterDuff.Mode.SRC_IN);
+            }
         }
     }
 
