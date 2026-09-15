@@ -1538,7 +1538,7 @@ public class MainActivity extends AppCompatActivity {
                 ? String.format(java.util.Locale.US, "%.2f", calc.instantFuelRate)
                 : (data.instantSpeed == 0 ? "stopped" : "N/A"));
 
-        // Display km/L on inverted logarithmic bar (50+ on left to 2 on right).
+        // Display km/L on logarithmic bar (50+ on right to 2 on left).
         boolean hasValidInstantKmL = data.instantSpeed != 0 && calc.instantFuelRate > 0;
         if (hasValidInstantKmL) {
             pbInstantFuelRateBar.setProgress(mapInstantKmLToBar(calc.instantFuelRate));
@@ -1578,14 +1578,16 @@ public class MainActivity extends AppCompatActivity {
 
     private int mapInstantKmLToBar(float kmLValue) {
         if (kmLValue >= 50f) {
-            return 30; // Keep a visible green segment for 50+
+            return 970; // Keep a visible green segment for 50+ on the right
         }
         if (kmLValue <= 2f) {
-            return 1000; // Clamp to right red edge for <=2
+            return 0; // Clamp to left red edge for <=2
         }
         float clamped = Math.max(2f, Math.min(50f, kmLValue));
         double normalized = (Math.log10(50.0) - Math.log10(clamped)) / (Math.log10(50.0) - Math.log10(2.0));
-        return (int) Math.round(normalized * 1000.0);
+        // Invert to show 50+ on right and 2 on left
+        double inverted = 1.0 - normalized;
+        return (int) Math.round(inverted * 1000.0);
     }
 
     private void updateInstantFuelRateBarColor(float kmLValue) {
